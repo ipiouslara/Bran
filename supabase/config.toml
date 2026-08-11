@@ -1,0 +1,12 @@
+
+[functions.create-employee-user]
+enabled = true
+verify_jwt = false
+import_map = "./functions/create-employee-user/deno.json"
+entrypoint = "./functions/create-employee-user/index.ts"
+
+[functions.notify-phase-cascade]
+enabled = true
+verify_jwt = false
+import_map = "./functions/notify-phase-cascade/deno.json"
+entrypoint = "./functions/notify-phase-cascade/index.ts"

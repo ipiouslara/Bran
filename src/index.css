@@ -1,0 +1,451 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,300;1,14..32,400&display=swap');
+@import "tailwindcss";
+
+/* ============================================================
+   BRAN v2 — Design System Tokens
+   ============================================================ */
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* Brand Palette */
+  --color-brand-green:          #1DAA58;
+  --color-brand-green-light:    #22C55E;
+  --color-brand-green-dim:      rgba(29, 170, 88, 0.15);
+  --color-brand-blue:           #2484C6;
+  --color-brand-blue-light:     #38BDF8;
+  --color-brand-blue-dim:       rgba(36, 132, 198, 0.15);
+  --color-brand-teal:           #008DA5;
+  --color-brand-primary-green:  #1DAA58;
+  --color-brand-primary-blue:   #2484C6;
+  --color-brand-secondary-teal: #008DA5;
+  --color-brand-dark-base:      #1B1D21;
+  --color-brand-grey-muted:     #B1B7C3;
+
+  /* Surface Layers — Dark */
+  --color-surface-base:    #030712;
+  --color-surface-1:       #0D0F14;
+  --color-surface-2:       #131720;
+  --color-surface-3:       #1A1F2E;
+  --color-surface-glass:   rgba(255,255,255,0.04);
+  --color-surface-raised:  rgba(255,255,255,0.07);
+
+  /* Surface Layers — Light */
+  --color-surface-light-base:   #F0F4F8;
+  --color-surface-light-1:      #FFFFFF;
+  --color-surface-light-2:      #F8FAFC;
+  --color-surface-light-3:      #EEF2F7;
+  --color-surface-light-glass:  rgba(0,0,0,0.03);
+  --color-surface-light-raised: rgba(0,0,0,0.06);
+
+  /* Borders — Dark */
+  --color-border-subtle:  rgba(255,255,255,0.06);
+  --color-border-medium:  rgba(255,255,255,0.11);
+  --color-border-strong:  rgba(255,255,255,0.18);
+  --color-border-brand:   rgba(29,170,88,0.35);
+  --color-border-blue:    rgba(36,132,198,0.35);
+
+  /* Borders — Light */
+  --color-border-light-subtle: rgba(0,0,0,0.07);
+  --color-border-light-medium: rgba(0,0,0,0.12);
+  --color-border-light-strong: rgba(0,0,0,0.2);
+
+  /* Text — Dark */
+  --color-text-primary:   #F1F5F9;
+  --color-text-secondary: #94A3B8;
+  --color-text-muted:     #475569;
+  --color-text-brand:     #1DAA58;
+
+  /* Text — Light */
+  --color-text-light-primary:   #0F172A;
+  --color-text-light-secondary: #475569;
+  --color-text-light-muted:     #94A3B8;
+
+  /* Semantic colours */
+  --color-status-green:  #22C55E;
+  --color-status-yellow: #EAB308;
+  --color-status-red:    #F43F5E;
+  --color-status-blue:   #2484C6;
+}
+
+:root {
+  --bg-page: #F8FAFC;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #F1F5F9;
+  --border-subtle: #E2E8F0;
+  --text-main: #0F172A;
+  --text-muted: #64748B;
+  --input-bg: #F1F5F9;
+  --sidebar-bg: #FFFFFF;
+}
+
+.dark {
+  --bg-page: #000000;
+  --bg-card: #0D0D0D;
+  --bg-card-hover: #171717;
+  --border-subtle: rgba(255, 255, 255, 0.1);
+  --text-main: #FFFFFF;
+  --text-muted: #A1A1AA;
+  --input-bg: #121212;
+  --sidebar-bg: #000000;
+}
+
+/* ============================================================
+   Base Reset
+   ============================================================ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.22);
+}
+
+.light-mode ::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.15);
+}
+.light-mode ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0,0,0,0.25);
+}
+
+/* ============================================================
+   Brand Gradient Utilities
+   ============================================================ */
+
+.brand-gradient {
+  background: linear-gradient(135deg, #1DAA58 0%, #2484C6 100%);
+}
+
+.brand-gradient-text {
+  background: linear-gradient(135deg, #1DAA58 0%, #2484C6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.brand-gradient-border {
+  border-image: linear-gradient(135deg, #1DAA58, #2484C6) 1;
+}
+
+/* ============================================================
+   Glass Panel Utilities
+   ============================================================ */
+
+.glass-card {
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.09);
+}
+
+.glass-card-light {
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0,0,0,0.10);
+}
+
+.glass-surface {
+  background: rgba(255,255,255,0.025);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.glass-panel {
+  background: rgba(10, 10, 10, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================================
+   Status Badge Utilities
+   ============================================================ */
+
+.badge-status-approved, .badge-status-completed {
+  background-color: rgba(29, 170, 88, 0.12) !important;
+  color: #4ADE80 !important;
+  border: 1px solid rgba(29, 170, 88, 0.28) !important;
+}
+
+.badge-status-in-progress {
+  background-color: rgba(36, 132, 198, 0.12) !important;
+  color: #60A5FA !important;
+  border: 1px solid rgba(36, 132, 198, 0.28) !important;
+}
+
+.badge-status-pending {
+  background-color: rgba(234, 179, 8, 0.12) !important;
+  color: #FDE047 !important;
+  border: 1px solid rgba(234, 179, 8, 0.28) !important;
+}
+
+.badge-status-overdue {
+  background-color: rgba(244, 63, 94, 0.12) !important;
+  color: #FB7185 !important;
+  border: 1px solid rgba(244, 63, 94, 0.28) !important;
+}
+
+/* Light mode badge overrides */
+.light-mode .badge-status-approved,
+.light-mode .badge-status-completed {
+  background-color: rgba(29, 170, 88, 0.10) !important;
+  color: #16A34A !important;
+  border: 1px solid rgba(29, 170, 88, 0.30) !important;
+}
+
+.light-mode .badge-status-in-progress {
+  background-color: rgba(36, 132, 198, 0.10) !important;
+  color: #1D6FA4 !important;
+  border: 1px solid rgba(36, 132, 198, 0.30) !important;
+}
+
+.light-mode .badge-status-pending {
+  background-color: rgba(234, 179, 8, 0.10) !important;
+  color: #A16207 !important;
+  border: 1px solid rgba(234, 179, 8, 0.30) !important;
+}
+
+.light-mode .badge-status-overdue {
+  background-color: rgba(244, 63, 94, 0.10) !important;
+  color: #E11D48 !important;
+  border: 1px solid rgba(244, 63, 94, 0.30) !important;
+}
+
+/* ============================================================
+   Card Hover Glow
+   ============================================================ */
+
+.hover-card-glow {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hover-card-glow:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -8px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.10);
+}
+
+.light-mode .hover-card-glow:hover {
+  box-shadow: 0 12px 32px -8px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.08);
+}
+
+/* ============================================================
+   Overdue Pulse Animation
+   ============================================================ */
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(244, 63, 94, 0.3);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(244, 63, 94, 0.55);
+    transform: scale(1.015);
+  }
+}
+
+.animate-pulse-glow-overdue {
+  animation: pulse-glow 2.5s infinite ease-in-out;
+}
+
+/* ============================================================
+   Header Utilities
+   ============================================================ */
+
+.bg-header-navy {
+  background-color: rgba(3, 7, 18, 0.9) !important;
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255,255,255,0.07) !important;
+}
+
+.light-mode .bg-header-navy {
+  background-color: rgba(255,255,255,0.92) !important;
+  border-bottom: 1px solid rgba(0,0,0,0.09) !important;
+}
+
+.modal-header-gradient {
+  background: linear-gradient(135deg, #0D0F14 0%, #030712 100%) !important;
+}
+
+.light-mode .modal-header-gradient {
+  background: linear-gradient(135deg, #F8FAFC 0%, #FFFFFF 100%) !important;
+}
+
+/* ============================================================
+   Gradient Text Shimmer (Landing Page)
+   ============================================================ */
+
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-gradient-text {
+  background-size: 200% 200%;
+  animation: gradient-shift 5s ease infinite;
+}
+
+/* ============================================================
+   Sidebar Active Glow
+   ============================================================ */
+
+.nav-item-active-glow {
+  position: relative;
+  background: linear-gradient(90deg, rgba(29,170,88,0.12) 0%, rgba(36,132,198,0.08) 100%);
+  border: 1px solid rgba(29,170,88,0.25);
+  color: #1DAA58;
+}
+
+.nav-item-active-glow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10%;
+  height: 80%;
+  width: 3px;
+  background: linear-gradient(180deg, #1DAA58 0%, #2484C6 100%);
+  border-radius: 0 2px 2px 0;
+}
+
+.light-mode .nav-item-active-glow {
+  background: linear-gradient(90deg, rgba(29,170,88,0.10) 0%, rgba(36,132,198,0.07) 100%);
+  border: 1px solid rgba(29,170,88,0.30);
+  color: #15803D;
+}
+
+/* ============================================================
+   Shimmer Loading Skeleton
+   ============================================================ */
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.09) 50%,
+    rgba(255,255,255,0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite;
+  border-radius: 6px;
+}
+
+.light-mode .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(0,0,0,0.05) 25%,
+    rgba(0,0,0,0.10) 50%,
+    rgba(0,0,0,0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite;
+}
+
+/* ============================================================
+   Page Transition
+   ============================================================ */
+
+@keyframes page-fade-in {
+  from {
+    opacity: 0.15;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.page-enter {
+  animation: page-fade-in 0.2s ease-out both;
+}
+
+/* Linear spin animation for refresh buttons */
+@keyframes spin-linear {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-linear {
+  animation: spin-linear 1s linear infinite;
+}
+
+/* ============================================================
+   Light Mode Root (applied via .light-mode class on <html>)
+   ============================================================ */
+
+.light-mode body {
+  background-color: #F0F4F8;
+  color: #0F172A;
+}
+
+.light-mode ::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.04);
+}
+
+/* ============================================================
+   Responsive Typography Helpers
+   ============================================================ */
+
+.text-display {
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.text-headline {
+  font-size: clamp(1.25rem, 2.5vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* ============================================================
+   GPU Animation & Motion Accessibility
+   ============================================================ */
+
+.gpu-accelerated {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
