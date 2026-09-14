@@ -15,11 +15,11 @@ export const TableSkeleton: React.FC<TableSkeletonProps> = ({
 }) => {
   const isDark = theme === 'dark';
   const bgCard = isDark ? 'bg-[#0D0D0D] border-neutral-800/80' : 'bg-white border-neutral-200';
-  const pulseBg = isDark ? 'bg-neutral-800/60' : 'bg-neutral-200';
+  const pulseBg = 'placeholder';
   const borderColor = isDark ? 'border-neutral-800/60' : 'border-neutral-200/80';
 
   return (
-    <div className={`rounded-xl border ${bgCard} shadow-xl overflow-hidden animate-pulse transition-colors ${className}`}>
+    <div className={`rounded-xl border ${bgCard} shadow-xl overflow-hidden transition-colors ${className}`}>
       {/* Table Header Placeholder */}
       <div className={`p-4 border-b ${borderColor} flex items-center justify-between gap-4 bg-neutral-500/5`}>
         <div className={`h-4 w-1/4 rounded-md ${pulseBg}`} />

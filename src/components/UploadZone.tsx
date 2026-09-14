@@ -217,8 +217,8 @@ export default function UploadZone({
             </div>
 
             {activeSheet?.rows && activeSheet.rows.length > 0 ? (
-              <div className="overflow-x-auto rounded-md border border-[#B1B7C3]/15">
-                <table className="w-full text-[10px] text-left border-collapse">
+              <div className="overflow-x-auto overscroll-x-contain touch-pan-x rounded-md border border-[#B1B7C3]/15">
+                <table className="w-full text-[10px] text-left border-collapse min-w-[500px]">
                   <thead>
                     <tr className="bg-neutral-500/10 border-b border-[#B1B7C3]/10">
                       {activeSheet.headers.map(h => (

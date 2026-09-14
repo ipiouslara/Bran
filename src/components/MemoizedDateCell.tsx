@@ -6,7 +6,7 @@
 import React, { memo } from 'react';
 import { Phase } from '../types';
 import { RemotePresenceUser } from '../hooks/useTimelineRealtime';
-import { User } from 'lucide-react';
+import { User, Lock } from 'lucide-react';
 import { formatDateDDMMYYYY } from '../utils/dateFormatter';
 
 interface MemoizedDateCellProps {
@@ -15,6 +15,7 @@ interface MemoizedDateCellProps {
   phase: Phase | undefined;
   pendingValue: string | null | undefined;
   hasConflict?: boolean;
+  hasSequenceConflict?: boolean;
   isEditing: boolean;
   remoteUsersEditing: RemotePresenceUser[];
   theme: 'dark' | 'light';
@@ -32,12 +33,14 @@ function arePropsEqual(prevProps: MemoizedDateCellProps, nextProps: MemoizedDate
     prevProps.isEditing === nextProps.isEditing &&
     prevProps.pendingValue === nextProps.pendingValue &&
     prevProps.hasConflict === nextProps.hasConflict &&
+    prevProps.hasSequenceConflict === nextProps.hasSequenceConflict &&
     prevProps.theme === nextProps.theme &&
     prevProps.bgClass === nextProps.bgClass &&
     prevProps.phase?.internalStartDate === nextProps.phase?.internalStartDate &&
     prevProps.phase?.internalEndDate === nextProps.phase?.internalEndDate &&
     prevProps.phase?.clientDate === nextProps.phase?.clientDate &&
     prevProps.phase?.status === nextProps.phase?.status &&
+    prevProps.phase?.assignedTo === nextProps.phase?.assignedTo &&
     prevProps.remoteUsersEditing.length === nextProps.remoteUsersEditing.length &&
     prevProps.remoteUsersEditing.every((u, idx) => u.userId === nextProps.remoteUsersEditing[idx]?.userId)
   );
@@ -49,6 +52,7 @@ export const MemoizedDateCell = memo(function MemoizedDateCell({
   phase,
   pendingValue,
   hasConflict,
+  hasSequenceConflict,
   isEditing,
   remoteUsersEditing,
   theme,
@@ -63,16 +67,32 @@ export const MemoizedDateCell = memo(function MemoizedDateCell({
     : (phase ? (field === 'internalStartDate' ? phase.internalStartDate : field === 'internalEndDate' ? phase.internalEndDate : phase.clientDate) : '') || '';
 
   const isCompleted = phase?.status === 'Completed' || phase?.status === 'Approved' || phase?.status === 'Done';
+  const isAssigned = Boolean(phase?.assignedTo || (phase as any)?.assigned_to);
+  const isAssignedStartFrozen = field === 'internalStartDate' && isAssigned;
+  const isApprovedEndFrozen = field === 'internalEndDate' && (phase?.status === 'Approved' || (phase?.status === 'Completed' && Boolean((phase as any)?.is_approved)));
+
+  const isFrozen = isCompleted || isAssignedStartFrozen || isApprovedEndFrozen;
+  const freezeTooltip = isAssignedStartFrozen
+    ? 'Assigned phase start date is locked'
+    : isApprovedEndFrozen
+    ? 'Approved phase end date is permanently locked'
+    : isCompleted
+    ? 'Completed phase milestone is locked'
+    : undefined;
+
   const isRemoteLocked = remoteUsersEditing.length > 0;
   const lockUser = remoteUsersEditing[0];
 
   return (
     <td
       className={`py-3 px-4 border-r border-neutral-500/10 text-center relative ${bgClass} ${
+        hasSequenceConflict ? 'ring-2 ring-rose-500 border-rose-500 bg-rose-500/10' : ''
+      } ${
         isRemoteLocked ? 'ring-2 ring-amber-400/80 ring-inset' : ''
-      } ${isCompleted ? 'cursor-not-allowed opacity-75' : ''}`}
+      } ${isFrozen ? 'cursor-not-allowed opacity-80' : ''}`}
+      title={hasSequenceConflict ? 'Sequence Conflict: starts before predecessor finishes' : freezeTooltip}
       onClick={() => {
-        if (!isCompleted && !isRemoteLocked) {
+        if (!isFrozen && !isRemoteLocked) {
           onClick();
         }
       }}
@@ -88,7 +108,7 @@ export const MemoizedDateCell = memo(function MemoizedDateCell({
         </div>
       )}
 
-      {isEditing ? (
+      {isEditing && !isFrozen ? (
         <input
           type="date"
           value={value || ''}
@@ -107,8 +127,13 @@ export const MemoizedDateCell = memo(function MemoizedDateCell({
           }`}
         />
       ) : (
-        <div className="min-h-5 flex flex-col justify-center items-center cursor-pointer relative group">
-          <span>{formatDateDDMMYYYY(value)}</span>
+        <div className={`min-h-5 flex flex-col justify-center items-center relative group ${isFrozen ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+          <div className="flex items-center gap-1">
+            <span>{formatDateDDMMYYYY(value)}</span>
+            {isFrozen && (
+              <Lock className="w-2.5 h-2.5 text-neutral-400 shrink-0 opacity-70" />
+            )}
+          </div>
           {pendingValue !== undefined && (
             <span className="text-[8px] font-bold text-amber-500 mt-0.5">Unsaved</span>
           )}

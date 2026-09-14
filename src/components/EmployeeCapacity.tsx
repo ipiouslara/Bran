@@ -423,13 +423,14 @@ export default function EmployeeCapacity({ theme, currentUser, refreshTrigger = 
                           No active phases assigned to this team member in the selected date window.
                         </p>
                       ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full border-collapse text-xs text-left">
+                        <div className="overflow-x-auto overscroll-x-contain touch-pan-x">
+                          <table className="w-full border-collapse text-xs text-left min-w-[650px]">
                             <thead>
                               <tr className={theme === 'dark' ? 'bg-neutral-900/60 border-b border-neutral-800' : 'bg-neutral-100 border-b border-neutral-250'}>
                                 <th className="p-2 font-semibold">Phase Name</th>
                                 <th className="p-2 font-semibold">Project</th>
-                                <th className="p-2 font-semibold">Course & Module</th>
+                                <th className="p-2 font-semibold">Course</th>
+                                <th className="p-2 font-semibold">Module</th>
                                 <th className="p-2 font-semibold text-center">Start Date</th>
                                 <th className="p-2 font-semibold text-center">End Date</th>
                                 <th className="p-2 font-semibold text-center">Days in Window</th>
@@ -441,6 +442,7 @@ export default function EmployeeCapacity({ theme, currentUser, refreshTrigger = 
                                 <tr key={ph.id} className="border-b border-neutral-800/40 hover:bg-neutral-800/20">
                                   <td className="p-2 font-semibold">{ph.phaseName}</td>
                                   <td className="p-2 text-neutral-400">{ph.projectName}</td>
+                                  <td className="p-2 text-neutral-400 font-mono text-[11px]">{ph.courseCodeName}</td>
                                   <td className="p-2 text-neutral-400 font-mono text-[11px]">{ph.moduleCodeName}</td>
                                   <td className="p-2 text-center text-neutral-400">{ph.startDate || '-'}</td>
                                   <td className="p-2 text-center text-neutral-400">{ph.endDate || '-'}</td>

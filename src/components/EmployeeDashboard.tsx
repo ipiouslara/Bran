@@ -13,7 +13,7 @@ interface EmployeeDashboardProps {
   theme: 'dark' | 'light';
   employeeId: string; // The selected employee's unique record ID (or employeeId)
   employeeName: string;
-  currentUser?: { email: string; role: string; id?: string; name?: string } | null;
+  currentUser?: { email: string; role: string; id?: string; employeeId?: string; name?: string } | null;
 }
 
 export default function EmployeeDashboard({ theme, employeeId, employeeName, currentUser }: EmployeeDashboardProps) {
@@ -72,12 +72,14 @@ export default function EmployeeDashboard({ theme, employeeId, employeeName, cur
 
   const employeePhases = phases.filter(p => {
     if (!p.assignedTo) return false;
+    const assigned = p.assignedTo.trim().toLowerCase();
     return (
       p.assignedTo === employeeId ||
       p.assignedTo === currentUserId ||
-      (currentEmpId && p.assignedTo === currentEmpId) ||
-      (currentEmail && p.assignedTo.toLowerCase() === currentEmail.toLowerCase()) ||
-      (currentName && p.assignedTo.toLowerCase() === currentName.toLowerCase())
+      (currentEmpId && assigned === currentEmpId.trim().toLowerCase()) ||
+      (currentEmail && assigned === currentEmail.trim().toLowerCase()) ||
+      (currentName && assigned === currentName.trim().toLowerCase()) ||
+      (employeeName && assigned === employeeName.trim().toLowerCase())
     );
   });
 
@@ -95,18 +97,33 @@ export default function EmployeeDashboard({ theme, employeeId, employeeName, cur
   };
 
   // Helper selectors
-  const getModuleInfo = (moduleId: string) => {
-    const mod = modules.find(m => m.id === moduleId);
-    if (!mod) return { code: 'N/A', name: 'Unknown Module', courseCode: 'N/A', courseName: 'Unknown Course' };
+  const getModuleInfo = (moduleId?: string | null, courseId?: string | null) => {
+    if (moduleId) {
+      const mod = modules.find(m => m.id === moduleId);
+      if (mod) {
+        const crs = courses.find(c => c.id === mod.courseId);
+        return {
+          code: mod.code,
+          name: mod.name,
+          language: mod.language,
+          courseCode: crs?.code || 'N/A',
+          courseName: crs?.name || 'Unknown Course'
+        };
+      }
+    }
+
+    if (courseId) {
+      const crs = courses.find(c => c.id === courseId);
+      return {
+        code: 'LMS Track',
+        name: crs?.name || 'Course-level Phase',
+        language: undefined,
+        courseCode: crs?.code || 'N/A',
+        courseName: crs?.name || 'Unknown Course'
+      };
+    }
     
-    const crs = courses.find(c => c.id === mod.courseId);
-    return {
-      code: mod.code,
-      name: mod.name,
-      language: mod.language,
-      courseCode: crs?.code || 'N/A',
-      courseName: crs?.name || 'Unknown Course'
-    };
+    return { code: 'N/A', name: 'Unknown Module', courseCode: 'N/A', courseName: 'Unknown Course' };
   };
 
   // Stats calculation
@@ -126,13 +143,13 @@ export default function EmployeeDashboard({ theme, employeeId, employeeName, cur
     // 2. Search Query (Course, Module, Phase details)
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase().trim();
-    const modInfo = getModuleInfo(p.moduleId);
+    const modInfo = getModuleInfo(p.moduleId, p.courseId);
     return (
-      p.phaseName.toLowerCase().includes(query) ||
-      modInfo.code.toLowerCase().includes(query) ||
-      modInfo.name.toLowerCase().includes(query) ||
-      modInfo.courseCode.toLowerCase().includes(query) ||
-      modInfo.courseName.toLowerCase().includes(query)
+      (p.phaseName && p.phaseName.toLowerCase().includes(query)) ||
+      (modInfo.code && modInfo.code.toLowerCase().includes(query)) ||
+      (modInfo.name && modInfo.name.toLowerCase().includes(query)) ||
+      (modInfo.courseCode && modInfo.courseCode.toLowerCase().includes(query)) ||
+      (modInfo.courseName && modInfo.courseName.toLowerCase().includes(query))
     );
   });
 
@@ -283,7 +300,7 @@ export default function EmployeeDashboard({ theme, employeeId, employeeName, cur
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {filteredPhases.map(ph => {
-            const modInfo = getModuleInfo(ph.moduleId);
+            const modInfo = getModuleInfo(ph.moduleId, ph.courseId);
             const isPending = ph.status !== 'Completed' && ph.status !== 'Done';
             
             return (
@@ -311,7 +328,9 @@ export default function EmployeeDashboard({ theme, employeeId, employeeName, cur
 
                   {/* Module details */}
                   <div className="space-y-1">
-                    <span className="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">Module Coordinate</span>
+                    <span className="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">
+                      {ph.entityLevel === 'course' ? 'Track / Scope' : 'Module Coordinate'}
+                    </span>
                     <h3 className="text-xs font-bold text-neutral-200 dark:text-white flex items-center gap-1.5">
                       <span className="font-mono text-[11px] text-[#1DAA58]">{modInfo.code}</span>
                       <span className="text-neutral-400 font-normal">|</span>

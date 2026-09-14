@@ -1,5 +1,5 @@
 import { calculateInclusiveDuration, calculateZeroLagGap, addZeroLagGap, getNonWorkingDayReason } from './workingDays';
-import { runBidirectionalCascade } from './cascadingEngine';
+import { runBidirectionalCascade, detectSequenceConflicts } from './cascadingEngine';
 import { Phase, PhaseGap, ClientInternalMapping } from '../types';
 
 function assertEquals<T>(actual: T, expected: T, message?: string) {
@@ -91,16 +91,10 @@ export function runCascadingEngineTests() {
 
   // Test 5: Client date edit cascades forward and backward through all internal phases
   const fullPhases: Phase[] = [
-    { id: 'ip1', moduleId: 'm1', phaseName: 'P1', internalStartDate: '2026-08-03', internalEndDate: '2026-08-04', sourceFileRef: 'test', status: 'Pending' },
-    { id: 'ip2', moduleId: 'm1', phaseName: 'P2', internalStartDate: '2026-08-05', internalEndDate: '2026-08-06', sourceFileRef: 'test', status: 'Pending' },
-    { id: 'ip3', moduleId: 'm1', phaseName: 'P3', internalStartDate: '2026-08-07', internalEndDate: '2026-08-10', sourceFileRef: 'test', status: 'Pending' },
-    { id: 'cp2', moduleId: 'm1', phaseName: 'P2', clientDate: '2026-08-06', sourceFileRef: 'test', status: 'Pending' }
-  ];
-
-  const fullGaps: PhaseGap[] = [
-    { projectId: 'p1', earlierPhaseId: 'ip1', laterPhaseId: 'ip2', workingDaysGap: 0, gapType: 'internal_to_internal' },
-    { projectId: 'p1', earlierPhaseId: 'ip2', laterPhaseId: 'ip3', workingDaysGap: 0, gapType: 'internal_to_internal' },
-    { projectId: 'p1', earlierPhaseId: 'ip2', laterPhaseId: 'cp2', workingDaysGap: 0, gapType: 'internal_to_client' }
+    { id: 'ip1', moduleId: 'm1', phaseName: 'P1', internalStartDate: '2026-08-03', internalEndDate: '2026-08-04', sourceFileRef: 'test', status: 'Pending', phaseSequence: 1 },
+    { id: 'ip2', moduleId: 'm1', phaseName: 'P2', internalStartDate: '2026-08-05', internalEndDate: '2026-08-06', sourceFileRef: 'test', status: 'Pending', phaseSequence: 2 },
+    { id: 'ip3', moduleId: 'm1', phaseName: 'P3', internalStartDate: '2026-08-07', internalEndDate: '2026-08-10', sourceFileRef: 'test', status: 'Pending', phaseSequence: 3 },
+    { id: 'cp2', moduleId: 'm1', phaseName: 'P2', clientDate: '2026-08-06', sourceFileRef: 'test', status: 'Pending', phaseSequence: 2 }
   ];
 
   const fullMappings: ClientInternalMapping[] = [
@@ -112,7 +106,6 @@ export function runCascadingEngineTests() {
     modifiedField: 'clientDate',
     newDate: '2026-08-12', // shifted forward
     allPhases: fullPhases,
-    phaseGaps: fullGaps,
     clientMappings: fullMappings,
     holidays: []
   });
@@ -124,6 +117,32 @@ export function runCascadingEngineTests() {
   assertEquals(resIp2?.internalEndDate, '2026-08-12', 'Anchor internal phase P2 end date shifted');
   assertEquals(resIp3?.internalStartDate, '2026-08-13', 'Downstream internal phase P3 shifted forward');
   assertEquals(resIp1?.internalEndDate, '2026-08-10', 'Upstream internal phase P1 shifted backward from P2 start');
+
+  // Test 6: Completed Phase Firewall halts backward cascade on collision
+  let firewallCaught = false;
+  try {
+    runBidirectionalCascade({
+      modifiedPhaseId: 'p2',
+      modifiedField: 'internalStartDate',
+      newDate: '2026-07-21', // Collides with p1 (ends 2026-07-22)
+      allPhases: testPhases,
+      holidays
+    });
+  } catch (err: any) {
+    if (err.message.includes('Collides with locked historical milestone')) {
+      firewallCaught = true;
+    }
+  }
+  assertEquals(firewallCaught, true, 'Backward cascade into completed phase halted with firewall collision error');
+
+  // Test 7: Conflict detection flags inverted dates and negative gaps
+  const conflictPhases: Phase[] = [
+    { id: 'c1', moduleId: 'm1', phaseName: 'Phase A', internalStartDate: '2026-08-10', internalEndDate: '2026-08-15', status: 'Pending', phaseSequence: 1, sourceFileRef: 'Internal', sourceFile: 'Internal' },
+    { id: 'c2', moduleId: 'm1', phaseName: 'Phase B', internalStartDate: '2026-08-12', internalEndDate: '2026-08-18', status: 'Pending', phaseSequence: 2, sourceFileRef: 'Internal', sourceFile: 'Internal' } // starts before A ends!
+  ];
+  const conflicts = detectSequenceConflicts(conflictPhases);
+  assertEquals(conflicts.length, 1, 'One sequence conflict detected');
+  assertEquals(conflicts[0].phaseId, 'c2', 'Conflict detected on Phase B');
 
   console.log('✅ All cascading engine unit tests passed successfully.');
 }

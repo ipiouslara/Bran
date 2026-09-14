@@ -569,7 +569,7 @@ export default function ActivityLog({ theme, currentUser, refreshTrigger }: Acti
   return (
     <div id="audit-log-page" className="-mt-6 space-y-6 animate-fade-up bg-[var(--bg-page)] text-[var(--text-main)] transition-colors duration-150">
       {/* ── 1. Minimalist Title & Filters Header Bar (Matching Overview Page) ── */}
-      <div className="h-[52px] flex items-center justify-between border-b border-[var(--border-subtle)] px-0 gap-4">
+      <div className="min-h-[52px] py-2 flex flex-col md:flex-row md:items-center justify-between border-b border-[var(--border-subtle)] px-0 gap-4">
         {/* Left Section: Title + Date Range Presets + Category Dropdown + Search */}
         <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
           <h1 className={`text-2xl font-black tracking-tight shrink-0 ${theme === 'light' ? 'bg-gradient-to-r from-[#1DAA58] to-[#2484C6] bg-clip-text text-transparent' : 'text-white'}`}>Audit Log</h1>
@@ -620,7 +620,7 @@ export default function ActivityLog({ theme, currentUser, refreshTrigger }: Acti
           </div>
 
           {/* Compact Search Bar */}
-          <div className="relative min-w-[220px]">
+          <div className="relative w-full sm:w-auto min-w-[180px] flex-1 max-w-xs">
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[var(--text-muted)] pointer-events-none" />
             <input
               type="text"
@@ -678,11 +678,11 @@ export default function ActivityLog({ theme, currentUser, refreshTrigger }: Acti
             <p className="text-xs font-semibold text-[var(--text-muted)]">No audit trail records match the chosen search or filter criteria.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+          <div className="overflow-x-auto overscroll-x-contain touch-pan-x">
+            <table className="w-full text-left border-collapse text-xs min-w-[920px]">
               <thead>
                 <tr className="bg-[var(--input-bg)] border-b border-[var(--border-subtle)] text-[var(--text-muted)] uppercase tracking-wider font-semibold text-[10px]">
-                  <th className="p-3.5 w-44">USER NAME</th>
+                  <th className="p-3.5 w-44 sticky left-0 z-10 bg-[var(--input-bg)] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">USER NAME</th>
                   <th className="p-3.5 w-32">ROLE</th>
                   <th className="p-3.5 w-36">ACTION CATEGORY</th>
                   <th className="p-3.5 w-56">TARGET ENTITY</th>
@@ -704,8 +704,8 @@ export default function ActivityLog({ theme, currentUser, refreshTrigger }: Acti
                           ? 'bg-amber-500/15 border-amber-500/40'
                           : 'hover:bg-[var(--bg-card-hover)]'
                       }`}>
-                        {/* 1. USER NAME - Plain text, NO avatar icons/symbols */}
-                        <td className="p-3.5 font-bold text-[var(--text-main)] whitespace-nowrap text-xs">
+                        {/* 1. USER NAME - Plain text, sticky on left for horizontal scrolling */}
+                        <td className="p-3.5 font-bold text-[var(--text-main)] whitespace-nowrap text-xs sticky left-0 z-10 bg-[var(--bg-card)] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] transition-colors">
                           {log.actor_name || 'System Admin'}
                         </td>
 
@@ -760,8 +760,8 @@ export default function ActivityLog({ theme, currentUser, refreshTrigger }: Acti
                       {log.isGroupTrigger && isExpanded && (
                         <tr className="bg-[var(--input-bg)] border-b border-[var(--border-subtle)]">
                           <td colSpan={6} className="p-3 pl-8">
-                            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden shadow-sm">
-                              <table className="w-full text-left text-xs border-collapse">
+                            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-x-auto overscroll-x-contain touch-pan-x shadow-sm">
+                              <table className="w-full text-left text-xs border-collapse min-w-[540px]">
                                 <thead>
                                   <tr className="bg-[var(--input-bg)] border-b border-[var(--border-subtle)] text-[var(--text-muted)] uppercase tracking-wider font-semibold text-[10px]">
                                     <th className="p-2.5">Affected Downstream Phase</th>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Trash2, Edit2, UserPlus, Save, X, RefreshCw, AlertCircle, Upload, Check, FileSpreadsheet, Settings, Search, AlertTriangle, Users as UsersIcon, Clock } from 'lucide-react';
 import { Employee, SheetPreviewData, Project } from '../types';
 import { getEmployees, saveEmployee, deleteEmployee, cleanupOrphanedEmployees, getSupabase } from '../lib/db';
@@ -459,13 +460,13 @@ export default function EmployeeDirectory({ theme, refreshTrigger = 0, onDirecto
   return (
     <div id="employee-directory-page" className="-mt-6 space-y-6 animate-fade-up bg-[var(--bg-page)] text-[var(--text-main)] transition-colors duration-150">
       {/* ── Top Header Bar (Matching Overview Page Header) ── */}
-      <div className="h-[52px] flex items-center justify-between border-b border-[var(--border-subtle)] px-0 gap-4">
+      <div className="min-h-[52px] py-2 flex flex-col md:flex-row md:items-center justify-between border-b border-[var(--border-subtle)] px-0 gap-4">
         {/* Left Section: Title + Inline Search + Target Project Selector */}
         <div className="flex items-center gap-4 flex-wrap flex-1 min-w-0">
           <h1 className={`text-2xl font-black tracking-tight shrink-0 ${theme === 'light' ? 'bg-gradient-to-r from-[#1DAA58] to-[#2484C6] bg-clip-text text-transparent' : 'text-white'}`}>Directory &amp; Credentials</h1>
 
           {/* Compact Inline Search Bar (Matching Projects Page) */}
-          <div className="relative min-w-[220px]">
+          <div className="relative w-full sm:w-auto min-w-[180px] flex-1 max-w-xs">
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[var(--text-muted)] pointer-events-none" />
             <input
               type="text"
@@ -959,8 +960,8 @@ export default function EmployeeDirectory({ theme, refreshTrigger = 0, onDirecto
             <p className="text-xs font-semibold text-[var(--text-muted)]">No employees registered. Click Register Employee to populate directory.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+          <div className="overflow-x-auto overscroll-x-contain touch-pan-x">
+            <table className="w-full text-left border-collapse text-xs min-w-[880px]">
               <thead>
                 <tr className="bg-[var(--input-bg)] border-b border-[var(--border-subtle)] text-[var(--text-muted)] uppercase tracking-wider font-semibold text-[10px]">
                   {/* Bulk checkbox header */}
@@ -1191,11 +1192,17 @@ export default function EmployeeDirectory({ theme, refreshTrigger = 0, onDirecto
       </div>
 
       {/* Created Password Confirmation Modal */}
-      {createdPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className={`w-full max-w-sm p-6 rounded-lg border shadow-xl ${
-            theme === 'dark' ? 'bg-[#1B1D21] border-[#B1B7C3]/15 text-white' : 'bg-white border-neutral-200 text-neutral-900'
-          }`}>
+      {createdPasswordModal && createPortal(
+        <div 
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-xs overflow-y-auto"
+          onClick={() => setCreatedPasswordModal(null)}
+        >
+          <div 
+            className={`relative w-full max-w-sm max-h-[90vh] my-auto p-6 rounded-2xl border shadow-xl overflow-y-auto ${
+              theme === 'dark' ? 'bg-[#1B1D21] border-[#B1B7C3]/15 text-white' : 'bg-white border-neutral-200 text-neutral-900'
+            }`}
+            onClick={e => e.stopPropagation()}
+          >
             {createdPasswordModal.linkedOnly ? (
               <>
                 <h3 className="text-sm font-bold text-[#2484C6] mb-3 flex items-center gap-1.5 uppercase tracking-wide">
@@ -1239,22 +1246,23 @@ export default function EmployeeDirectory({ theme, refreshTrigger = 0, onDirecto
             )}
             <button
               onClick={() => setCreatedPasswordModal(null)}
-              className="w-full py-2 bg-gradient-to-r from-[#1DAA58] to-[#2484C6] hover:brightness-110 active:scale-98 text-white text-xs font-bold rounded-md transition-all shadow-md cursor-pointer"
+              className="w-full py-2 bg-gradient-to-r from-[#1DAA58] to-[#2484C6] hover:brightness-110 active:scale-98 text-white text-xs font-bold rounded-lg transition-all shadow-md cursor-pointer"
             >
               Done & Close
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Custom Confirm Modal */}
-      {confirmModal && (
+      {confirmModal && createPortal(
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-xs overflow-y-auto"
           onClick={() => setConfirmModal(null)}
         >
           <div 
-            className={`max-w-md w-full p-6 rounded-lg border text-xs shadow-2xl ${
+            className={`relative max-w-md w-full max-h-[90vh] my-auto p-6 rounded-2xl border text-xs shadow-2xl overflow-y-auto ${
               theme === 'dark' ? 'bg-[#1B1D21] border-[#B1B7C3]/15 text-white' : 'bg-white border-neutral-200 text-neutral-900'
             }`}
             onClick={e => e.stopPropagation()}
@@ -1269,7 +1277,7 @@ export default function EmployeeDirectory({ theme, refreshTrigger = 0, onDirecto
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setConfirmModal(null)}
-                className={`px-3 py-1.5 border rounded font-semibold hover:bg-neutral-500/10 cursor-pointer ${
+                className={`px-3 py-1.5 border rounded-lg font-semibold hover:bg-neutral-500/10 cursor-pointer ${
                   theme === 'dark' ? 'border-neutral-750 text-neutral-350' : 'border-neutral-300 text-neutral-700'
                 }`}
               >
@@ -1277,13 +1285,14 @@ export default function EmployeeDirectory({ theme, refreshTrigger = 0, onDirecto
               </button>
               <button
                 onClick={confirmModal.onConfirm}
-                className="px-3 py-1.5 bg-[#2484C6] hover:brightness-110 text-white rounded font-bold transition-all shadow-md active:scale-97 cursor-pointer"
+                className="px-3 py-1.5 bg-[#2484C6] hover:brightness-110 text-white rounded-lg font-bold transition-all shadow-md active:scale-97 cursor-pointer"
               >
                 Confirm
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -499,8 +499,8 @@ export default function ResultsGrid({
                         </span>
                       </div>
 
-                      <div className="mt-3 overflow-x-auto">
-                        <table className="w-full text-left font-mono text-[10px] border-collapse">
+                      <div className="mt-3 overflow-x-auto overscroll-x-contain touch-pan-x">
+                        <table className="w-full text-left font-mono text-[10px] border-collapse min-w-[500px]">
                           <thead>
                             <tr className="text-neutral-500 border-b border-[#B1B7C3]/5">
                               <th className="pb-1 font-semibold">Phase Context</th>
@@ -609,8 +609,8 @@ export default function ResultsGrid({
 
       {/* Main comparative result rows listing */}
       {filteredResults.length > 0 ? (
-        <div className="overflow-x-auto rounded-lg border border-[#B1B7C3]/15">
-          <table className="w-full text-xs text-left border-collapse">
+        <div className="overflow-x-auto overscroll-x-contain touch-pan-x rounded-lg border border-[#B1B7C3]/15">
+          <table className="w-full text-xs text-left border-collapse min-w-[650px]">
             <thead>
               <tr className="bg-[#193661] text-white border-b border-[#DCDEE4]/20 font-semibold">
                 <th className="p-3">Status</th>

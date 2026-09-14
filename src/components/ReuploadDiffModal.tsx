@@ -293,8 +293,14 @@ function ReuploadDiffModalComponent({
     : `Review ${sourceFile} Timeline Updates`;
 
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
-      <div className={`w-full max-w-5xl max-h-[90vh] flex flex-col rounded-xl border ${cardBg} shadow-2xl overflow-hidden`}>
+    <div 
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto"
+      onClick={onCancel}
+    >
+      <div 
+        className={`w-full max-w-5xl max-h-[90vh] my-auto flex flex-col rounded-2xl border ${cardBg} shadow-2xl overflow-hidden`}
+        onClick={e => e.stopPropagation()}
+      >
         
         <div className={`p-5 border-b border-[var(--border-subtle)] flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[var(--bg-card)] text-[var(--text-main)]`}>
           <div className="flex items-center gap-3">
@@ -379,8 +385,8 @@ function ReuploadDiffModalComponent({
                 )}
               </div>
 
-              <div className="overflow-x-auto max-h-[400px] overflow-y-auto overscroll-contain">
-                <table className="w-full text-xs text-left">
+              <div className="overflow-x-auto overscroll-x-contain touch-pan-x max-h-[400px] overflow-y-auto overscroll-contain">
+                <table className="w-full text-xs text-left min-w-[750px]">
                   <thead className={`border-b ${borderCol} bg-neutral-900/40 text-neutral-400 sticky top-0 z-10`}>
                     <tr>
                       <th className="p-2.5 w-10 text-center">
@@ -447,8 +453,8 @@ function ReuploadDiffModalComponent({
                   </h3>
                 </div>
               </div>
-              <div className="overflow-x-auto max-h-[400px] overflow-y-auto overscroll-contain">
-                <table className="w-full text-xs text-left">
+              <div className="overflow-x-auto overscroll-x-contain touch-pan-x max-h-[400px] overflow-y-auto overscroll-contain">
+                <table className="w-full text-xs text-left min-w-[750px]">
                   <thead className={`border-b ${borderCol} bg-neutral-900/40 text-neutral-400 sticky top-0 z-10`}>
                     <tr>
                       <th className="p-2.5 w-10 text-center">
@@ -518,8 +524,8 @@ function ReuploadDiffModalComponent({
                 <Info className="w-4 h-4 shrink-0 text-amber-400" />
                 <span>These rows exist in the database but are absent from the new file. They will <strong>NOT</strong> be deleted automatically.</span>
               </div>
-              <div className="overflow-x-auto max-h-48 overflow-y-auto overscroll-contain">
-                <table className="w-full text-xs text-left">
+              <div className="overflow-x-auto overscroll-x-contain touch-pan-x max-h-48 overflow-y-auto overscroll-contain">
+                <table className="w-full text-xs text-left min-w-[650px]">
                   <thead className={`border-b ${borderCol} bg-neutral-900/40 text-neutral-400 sticky top-0 z-10`}>
                     <tr>
                       <th className="p-2.5 font-medium">Course</th>

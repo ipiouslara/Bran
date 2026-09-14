@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { 
   Users, 
@@ -74,7 +75,7 @@ export default function CapacityAllocation({ theme, currentUser, refreshTrigger 
       const month = now.getMonth();
       const firstDay = new Date(year, month, 1);
       const lastDay = new Date(year, month + 1, 0);
-      setStartDate(startStr);
+      setStartDate(formatDateLocal(firstDay));
       setEndDate(formatDateLocal(lastDay));
     } else if (preset === '30days') {
       const target = new Date(now);
@@ -156,20 +157,20 @@ export default function CapacityAllocation({ theme, currentUser, refreshTrigger 
   return (
     <div id="capacity-allocation-page" className="-mt-6 space-y-6 animate-fade-up bg-[var(--bg-page)] text-[var(--text-main)] transition-colors duration-150">
       {/* ── 1. Minimalist Title & Horizon & Filters Header Bar (Matching Overview Page) ── */}
-      <div className="h-[52px] flex items-center justify-between border-b border-[var(--border-subtle)] px-0">
+      <div className="min-h-[52px] py-2 flex flex-col md:flex-row md:items-center justify-between border-b border-[var(--border-subtle)] px-0 gap-4">
         {/* Left Section: Title + Horizon Selector + Filters Button */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 flex-wrap">
           <h1 className={`text-2xl font-black tracking-tight ${theme === 'light' ? 'bg-gradient-to-r from-[#1DAA58] to-[#2484C6] bg-clip-text text-transparent' : 'text-white'}`}>Capacity &amp; Allocation</h1>
 
           {/* Horizon Date Presets matching Overview page */}
-          <div className="flex items-center gap-1 bg-[var(--input-bg)] p-1 rounded-lg border border-[var(--border-subtle)] relative">
+          <div className="flex items-center gap-1 bg-[var(--input-bg)] p-1 rounded-lg border border-[var(--border-subtle)] overflow-x-auto relative shrink-0">
             {(['14days', 'month', '30days'] as const).map((h) => {
               const isActive = activePreset === h;
               return (
                 <button
                   key={h}
                   onClick={() => applyPreset(h)}
-                  className={`relative px-3 py-1 rounded-md text-xs font-semibold cursor-pointer transition-colors ${
+                  className={`relative px-3 py-1 rounded-md text-xs font-semibold cursor-pointer whitespace-nowrap transition-colors ${
                     isActive
                       ? 'text-[var(--text-main)] font-bold'
                       : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
@@ -194,7 +195,7 @@ export default function CapacityAllocation({ theme, currentUser, refreshTrigger 
           <button
             type="button"
             onClick={() => setIsFilterModalOpen(true)}
-            className="px-3 py-1 text-xs font-semibold rounded-md border border-[var(--border-subtle)] bg-[var(--bg-card)] text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-main)] flex items-center gap-2 transition-all cursor-pointer"
+            className="px-3 py-1 text-xs font-semibold rounded-md border border-[var(--border-subtle)] bg-[var(--bg-card)] text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-main)] flex items-center gap-2 transition-all cursor-pointer shrink-0"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>Filters</span>
@@ -205,9 +206,9 @@ export default function CapacityAllocation({ theme, currentUser, refreshTrigger 
         </div>
 
         {/* Right Section: Inline Search Bar + Refresh Button */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           {/* Top Right Search Input (Matching Projects Page style) */}
-          <div className="relative min-w-[220px]">
+          <div className="relative w-full sm:w-auto min-w-[180px] flex-1 max-w-xs">
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[var(--text-muted)] pointer-events-none" />
             <input
               type="text"
@@ -246,7 +247,7 @@ export default function CapacityAllocation({ theme, currentUser, refreshTrigger 
       )}
 
       {/* ── 2. KPI Capacity Metric Cards ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
         <div className="p-4 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl flex items-center justify-between shadow-lg">
           <div>
             <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">Total Active</span>
@@ -315,13 +316,19 @@ export default function CapacityAllocation({ theme, currentUser, refreshTrigger 
                           <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-[var(--input-bg)] text-[var(--text-muted)] border border-[var(--border-subtle)]">
                             {emp.employeeDesignation}
                           </span>
+                          {emp.overlappingPhaseCount > 0 && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              <span>{emp.overlappingPhaseCount} Overlap{emp.overlappingPhaseCount > 1 ? 's' : ''}</span>
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-[var(--text-muted)] truncate mt-0.5">{emp.employeeEmail}</p>
                       </div>
                     </div>
 
                     {/* Workload Progress & Metrics */}
-                    <div className="flex items-center gap-4 min-w-[280px]">
+                    <div className="flex items-center gap-3 w-full md:w-auto min-w-0 md:min-w-[280px]">
                       <div className="flex-1 space-y-1">
                         <div className="flex justify-between text-xs">
                           <span className="text-[var(--text-muted)] text-[10px] uppercase font-bold">{colors.label}</span>
@@ -360,11 +367,12 @@ export default function CapacityAllocation({ theme, currentUser, refreshTrigger 
                       {emp.assignedPhases.length === 0 ? (
                         <p className="text-xs text-[var(--text-muted)] italic">No project phase assignments active in this date window.</p>
                       ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs font-mono">
+                        <div className="overflow-x-auto overscroll-x-contain touch-pan-x">
+                          <table className="w-full text-left text-xs font-mono min-w-[650px]">
                             <thead>
                               <tr className="text-[10px] text-[var(--text-muted)] uppercase border-b border-[var(--border-subtle)]">
                                 <th className="py-1.5 px-2">Project</th>
+                                <th className="py-1.5 px-2">Course</th>
                                 <th className="py-1.5 px-2">Module</th>
                                 <th className="py-1.5 px-2">Phase</th>
                                 <th className="py-1.5 px-2">Start Date</th>
@@ -376,6 +384,7 @@ export default function CapacityAllocation({ theme, currentUser, refreshTrigger 
                               {emp.assignedPhases.map((phase, idx) => (
                                 <tr key={idx} className="hover:bg-[var(--bg-card-hover)]">
                                   <td className="py-1.5 px-2 font-sans font-bold text-[var(--text-main)]">{phase.projectName}</td>
+                                  <td className="py-1.5 px-2 text-[var(--text-muted)]">{phase.courseCodeName}</td>
                                   <td className="py-1.5 px-2 text-[var(--text-muted)]">{phase.moduleCodeName}</td>
                                   <td className="py-1.5 px-2 text-[var(--text-main)] font-semibold">{phase.phaseName}</td>
                                   <td className="py-1.5 px-2 text-[var(--text-muted)]">{phase.startDate}</td>
@@ -397,10 +406,15 @@ export default function CapacityAllocation({ theme, currentUser, refreshTrigger 
       </div>
 
       {/* ── 4. Filter Modal Popover (Development Progress Style) ── */}
-      {isFilterModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:px-6">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsFilterModalOpen(false)} />
-          <div className="relative w-full max-w-md rounded-3xl border border-[#3A3F4A] bg-[#101214] p-6 shadow-2xl space-y-5 text-white">
+      {isFilterModalOpen && createPortal(
+        <div 
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto"
+          onClick={() => setIsFilterModalOpen(false)}
+        >
+          <div 
+            className="relative w-full max-w-md max-h-[90vh] my-auto rounded-3xl border border-[#3A3F4A] bg-[#101214] p-6 shadow-2xl space-y-5 text-white overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold tracking-tight text-white">Capacity &amp; Allocation Filters</h2>
@@ -479,7 +493,8 @@ export default function CapacityAllocation({ theme, currentUser, refreshTrigger 
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

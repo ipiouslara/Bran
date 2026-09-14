@@ -18,6 +18,7 @@ interface DataIngestionSuiteProps {
   theme: 'dark' | 'light';
   currentUser?: { email: string; role: string; id?: string; name?: string } | null;
   dbRefreshCounter: number;
+  initialProjectId?: string;
   handleCommitSuccess: (projectId: string) => void;
 }
 
@@ -25,9 +26,32 @@ export default function DataIngestionSuite({
   theme,
   currentUser,
   dbRefreshCounter,
+  initialProjectId,
   handleCommitSuccess
 }: DataIngestionSuiteProps) {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+
+  // Sync initial project if provided or found in session
+  useEffect(() => {
+    const targetProjId = initialProjectId || sessionStorage.getItem('project_editor_project_id');
+    if (targetProjId && (!selectedProject || selectedProject.id !== targetProjId)) {
+      const sb = getSupabase();
+      if (sb) {
+        sb.from('projects').select('*').eq('id', targetProjId).maybeSingle().then(({ data }) => {
+          if (data) {
+            setSelectedProject({
+              id: data.id,
+              name: data.name,
+              createdAt: data.created_at,
+              ownerId: data.owner_id,
+              has_lms_track: Boolean(data.has_lms_track),
+              column_order: data.column_order || null
+            });
+          }
+        });
+      }
+    }
+  }, [initialProjectId]);
 
   // Step 1 Holiday Gate State
   const [checkingHolidays, setCheckingHolidays] = useState(false);
@@ -103,103 +127,7 @@ export default function DataIngestionSuite({
         }
       }
 
-      // 2. Query inserted module phases to compute & save phase_gaps
-      const sb = getSupabase();
-      if (sb) {
-        // Fetch courses for project
-        const { data: courses } = await sb.from('courses').select('id').eq('project_id', projectId);
-        const courseIds = (courses || []).map(c => c.id);
-
-        if (courseIds.length > 0) {
-          const { data: modules } = await sb.from('modules').select('id').in('course_id', courseIds);
-          const moduleIds = (modules || []).map(m => m.id);
-
-          if (moduleIds.length > 0) {
-            const [intRes, cliRes, holGlobalRes, holProjRes] = await Promise.all([
-              sb.from('internal_phases').select('*').in('module_id', moduleIds),
-              sb.from('client_phases').select('*').in('module_id', moduleIds),
-              sb.from('global_holidays').select('date'),
-              sb.from('project_holidays').select('date').eq('project_id', projectId)
-            ]);
-
-            const globalDates = (holGlobalRes.data || []).map(h => h.date);
-            const projDates = (holProjRes.data || []).map(h => h.date);
-            const allHolidays = Array.from(new Set([...globalDates, ...projDates]));
-
-            const internalPhases = intRes.data || [];
-            const clientPhases = cliRes.data || [];
-            const calculatedGaps: PhaseGap[] = [];
-
-            // Group by module ID
-            const moduleMap = new Map<string, { internal: any[]; client: any[] }>();
-            moduleIds.forEach(mId => moduleMap.set(mId, { internal: [], client: [] }));
-
-            internalPhases.forEach(ip => {
-              const item = moduleMap.get(ip.module_id);
-              if (item) item.internal.push(ip);
-            });
-            clientPhases.forEach(cp => {
-              const item = moduleMap.get(cp.module_id);
-              if (item) item.client.push(cp);
-            });
-
-            moduleMap.forEach(({ internal, client }) => {
-              // Sort internal phases by strict workflow order
-              const sortedInternal = [...internal].sort((a, b) => getWorkflowRank(a.phase_name) - getWorkflowRank(b.phase_name));
-
-              // Compute internal-to-internal gaps (0-lag convention)
-              for (let i = 0; i < sortedInternal.length - 1; i++) {
-                const p1 = sortedInternal[i];
-                const p2 = sortedInternal[i + 1];
-                if (p1.internal_end_date && p2.internal_start_date) {
-                  const gap = calculateZeroLagGap(p1.internal_end_date, p2.internal_start_date, allHolidays);
-                  calculatedGaps.push({
-                    projectId,
-                    earlierPhaseId: p1.id,
-                    laterPhaseId: p2.id,
-                    workingDaysGap: gap,
-                    gapType: 'internal_to_internal'
-                  });
-                }
-              }
-
-              // Compute client-to-internal gaps
-              client.forEach(cp => {
-                const clientMapping = clientFile?.mappingConfig?.phases?.find(
-                  m => m.phaseName.toLowerCase() === cp.phase_name.toLowerCase()
-                );
-                const anchorName = clientMapping?.anchorInternalPhase || sortedInternal[0]?.phase_name || '';
-                const anchorPoint = clientMapping?.anchorPoint || 'End';
-
-                const targetInternal = sortedInternal.find(
-                  ip => ip.phase_name.toLowerCase().includes(anchorName.toLowerCase()) || anchorName.toLowerCase().includes(ip.phase_name.toLowerCase())
-                );
-
-                if (targetInternal && cp.client_date) {
-                  const baseDate = anchorPoint === 'Start'
-                    ? (targetInternal.internal_start_date || targetInternal.internal_end_date)
-                    : (targetInternal.internal_end_date || targetInternal.internal_start_date);
-
-                  if (baseDate) {
-                    const gap = calculateZeroLagGap(baseDate, cp.client_date, allHolidays);
-                    calculatedGaps.push({
-                      projectId,
-                      earlierPhaseId: targetInternal.id,
-                      laterPhaseId: cp.id,
-                      workingDaysGap: gap,
-                      gapType: 'client_to_internal'
-                    });
-                  }
-                }
-              });
-            });
-
-            if (calculatedGaps.length > 0) {
-              await savePhaseGaps(projectId, calculatedGaps);
-            }
-          }
-        }
-      }
+      // 2. Static phase_gaps computation deprecated (now computed dynamically in-memory)
     } catch (err) {
       console.error("Error computing ingestion gaps:", err);
     }

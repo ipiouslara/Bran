@@ -446,11 +446,11 @@ export default function ProjectSelector({
 
         {deleteConfirmModal && createPortal(
           <div 
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-150"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-md animate-in fade-in duration-150 overflow-y-auto"
             onClick={() => setDeleteConfirmModal(null)}
           >
             <div 
-              className={`max-w-md w-full p-6 rounded-xl border text-xs shadow-2xl ${
+              className={`relative max-w-md w-full my-auto max-h-[90vh] overflow-y-auto p-6 rounded-xl border text-xs shadow-2xl ${
                 theme === 'dark' ? 'bg-[#1B1D21] border-[#B1B7C3]/15 text-white' : 'bg-white border-neutral-200 text-neutral-900'
               }`}
               onClick={e => e.stopPropagation()}
@@ -666,11 +666,11 @@ export default function ProjectSelector({
       {/* Delete Confirmation Modal */}
       {deleteConfirmModal && createPortal(
         <div 
-          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-150"
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-md animate-in fade-in duration-150 overflow-y-auto"
           onClick={() => setDeleteConfirmModal(null)}
         >
           <div 
-            className={`max-w-md w-full p-6 rounded-xl border text-xs shadow-2xl ${
+            className={`relative max-w-md w-full my-auto max-h-[90vh] overflow-y-auto p-6 rounded-xl border text-xs shadow-2xl ${
               theme === 'dark' ? 'bg-[#1B1D21] border-[#B1B7C3]/15 text-white' : 'bg-white border-neutral-200 text-neutral-900'
             }`}
             onClick={e => e.stopPropagation()}

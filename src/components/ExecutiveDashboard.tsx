@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import OverviewSkeleton from './skeletons/OverviewSkeleton';
 import { motion } from 'motion/react';
 import {
@@ -124,8 +125,8 @@ export default function ExecutiveDashboard({
   return (
     <div className="-mt-6 space-y-6 animate-fade-up bg-[var(--bg-page)] text-[var(--text-main)] transition-colors duration-150">
       {/* 1. Minimalist Title & Inline Time Horizon Bar */}
-      <div className="h-[52px] flex items-center justify-between border-b border-[var(--border-subtle)] px-0">
-        <div className="flex items-center gap-4">
+      <div className="min-h-[52px] py-2 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-0">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className={`text-2xl font-black tracking-tight ${theme === 'light' ? 'bg-gradient-to-r from-[#1DAA58] to-[#2484C6] bg-clip-text text-transparent' : 'text-white'}`}>Overview</h1>
 
           {/* Inline Time Horizon Selector */}
@@ -320,8 +321,8 @@ export default function ExecutiveDashboard({
               <p className="text-[11px] text-[var(--text-muted)] mt-0.5">All active milestone phases are operating on schedule.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto overscroll-x-contain touch-pan-x">
+              <table className="w-full text-left text-xs min-w-[520px]">
                 <thead>
                   <tr className="border-b border-[var(--border-subtle)] text-[var(--text-muted)] uppercase text-[10px] tracking-wider font-semibold">
                     <th className="py-2 px-3">Project & Module</th>
@@ -437,9 +438,15 @@ export default function ExecutiveDashboard({
       </div>
 
       {/* Quick Shift Modal */}
-      {selectedShiftPhase && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-          <div className="w-full max-w-md p-5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-2xl space-y-4 text-xs">
+      {selectedShiftPhase && createPortal(
+        <div 
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-md overflow-y-auto"
+          onClick={() => setSelectedShiftPhase(null)}
+        >
+          <div 
+            className="relative w-full max-w-md max-h-[90vh] my-auto p-5 sm:p-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-2xl space-y-4 text-xs overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
               <h3 className="font-bold text-[var(--text-main)] text-sm flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-500 dark:text-amber-400" />
@@ -484,7 +491,7 @@ export default function ExecutiveDashboard({
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border-subtle)]">
               <button
                 onClick={() => setSelectedShiftPhase(null)}
                 className="px-4 py-2 rounded-lg font-bold text-neutral-400 hover:text-white bg-neutral-900 transition-all cursor-pointer"
@@ -500,7 +507,8 @@ export default function ExecutiveDashboard({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

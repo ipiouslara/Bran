@@ -61,7 +61,6 @@ import DataIngestionSuite from './components/DataIngestionSuite';
 import ResultsGrid from './components/ResultsGrid';
 import UploadsLog from './components/UploadsLog';
 import AppLayout from './components/layout/AppLayout';
-import AppLayoutSkeleton from './components/skeletons/AppLayoutSkeleton';
 import PageSkeleton from './components/skeletons/PageSkeleton';
 import LandingSkeleton from './components/skeletons/LandingSkeleton';
 
@@ -80,11 +79,16 @@ export default function App() {
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try {
+      if (!localStorage.getItem('app-theme-default-light-init')) {
+        localStorage.setItem('app-theme', 'light');
+        localStorage.setItem('app-theme-default-light-init', 'true');
+        return 'light';
+      }
       const saved = localStorage.getItem('app-theme');
       if (saved === 'dark' || saved === 'light') return saved;
-      return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+      return 'light';
     } catch (e) {
-      return 'dark';
+      return 'light';
     }
   });
 
@@ -436,11 +440,8 @@ export default function App() {
     }
   };
 
-  // Connection Verification Loading Screen
-  if (!connectionStatus.checked) {
-    if (currentUser) {
-      return <AppLayoutSkeleton theme={theme} />;
-    }
+  // Connection Verification Loading Screen (Cold start / Unauthenticated)
+  if (!connectionStatus.checked && !currentUser) {
     return <LandingSkeleton />;
   }
 
@@ -539,11 +540,11 @@ export default function App() {
     <>
       {showLoginOverlay && (
         <div
-          className={`fixed inset-0 z-50 bg-[#030712] overflow-y-auto gpu-accelerated transform transition-transform duration-500 ease-in-out ${
+          className={`fixed inset-0 z-50 ${theme === 'dark' ? 'bg-[#030712]' : 'bg-[#F8FAFC]'} overflow-y-auto gpu-accelerated transform transition-transform duration-500 ease-in-out ${
             isExitingLogin ? '-translate-y-full pointer-events-none' : 'translate-y-0'
           }`}
         >
-          <LandingPage onLoginSuccess={handleLoginSuccess} />
+          <LandingPage theme={theme} onLoginSuccess={handleLoginSuccess} />
         </div>
       )}
 
@@ -561,7 +562,7 @@ export default function App() {
         onLogout={handleLogout}
         activeProjectsCount={joinResults.length > 0 ? 1 : 0}
       >
-        <React.Suspense fallback={<PageSkeleton theme={theme} />}>
+        <React.Suspense fallback={<PageSkeleton theme={theme} activePage={activePage} />}>
           <div
             key={activePage}
             className="w-full page-enter gpu-accelerated"
@@ -611,6 +612,7 @@ export default function App() {
                 theme={theme}
                 currentUser={currentUser}
                 dbRefreshCounter={dbRefreshCounter}
+                initialProjectId={selectedProject?.id}
                 handleCommitSuccess={(newProjId) => {
                   handleCommitSuccess(newProjId);
                 }}
@@ -694,6 +696,13 @@ export default function App() {
                 currentUser={currentUser} 
                 refreshTrigger={dbCommitCounter}
                 onProjectsChanged={() => setDbCommitCounter(prev => prev + 1)}
+                onNavigateToIngestion={(projId?: string) => {
+                  if (projId) {
+                    sessionStorage.setItem('project_editor_project_id', projId);
+                    setSelectedProject({ id: projId, name: '', createdAt: new Date().toISOString() });
+                  }
+                  setActivePage('ingestion');
+                }}
               />
             )}
 

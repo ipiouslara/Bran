@@ -5,7 +5,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Project, RawUpload, Course, Module, Phase, JoinResultRow, Employee, PhaseGap, ClientInternalMapping } from '../types';
-import { workingDaysBetween } from '../utils/workingDays';
+import { workingDaysBetween, calculateInclusiveDuration } from '../utils/workingDays';
 
 // Read URL and Anon Key directly from environment config
 const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || '';
@@ -891,11 +891,31 @@ export async function updateClientPhaseStatus(
   const sb = getSupabase();
   if (!sb) throw new Error("Supabase client is not initialized.");
 
-  // First try updating status column directly
-  const { error: directErr } = await sb
+  // 1. Direct update on client_phases
+  let { data: updatedRows, error: directErr } = await sb
     .from('client_phases')
-    .update({ status })
-    .eq('id', phaseId);
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', phaseId)
+    .select('id, module_id, phase_name');
+
+  // If direct ID match didn't update any row, check if phaseId is a consolidated_phases_view ID having client_phase_id
+  if (!directErr && (!updatedRows || updatedRows.length === 0)) {
+    const { data: viewRow } = await sb
+      .from('consolidated_phases_view')
+      .select('client_phase_id')
+      .eq('id', phaseId)
+      .maybeSingle();
+
+    if (viewRow?.client_phase_id && isUuid(viewRow.client_phase_id)) {
+      const res = await sb
+        .from('client_phases')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', viewRow.client_phase_id)
+        .select('id, module_id, phase_name');
+      directErr = res.error;
+      updatedRows = res.data;
+    }
+  }
 
   if (directErr) {
     // If status column is missing in schema, store in metadata object safely
@@ -910,10 +930,23 @@ export async function updateClientPhaseStatus(
 
     const { error: metaErr } = await sb
       .from('client_phases')
-      .update({ metadata: updatedMeta })
+      .update({ metadata: updatedMeta, updated_at: new Date().toISOString() })
       .eq('id', phaseId);
 
     if (metaErr) throw directErr;
+  }
+
+  try {
+    await writeAuditLog({
+      actionType: 'phase_status_change',
+      entityType: 'phase',
+      entityId: phaseId,
+      entityLabel: `Client Phase Status -> ${status}`,
+      oldValue: null,
+      newValue: { status, mode: 'client' }
+    });
+  } catch (e) {
+    console.warn("Audit log notice:", e);
   }
 }
 
@@ -1024,6 +1057,161 @@ export async function deleteProject(projectId: string): Promise<void> {
   }
 }
 
+export async function updateProject(
+  projectId: string,
+  updates: { name?: string; ownerId?: string | null; has_lms_track?: boolean; column_order?: any }
+): Promise<Project | null> {
+  const sb = getSupabase();
+  if (!sb) throw new Error("Supabase client is not initialized.");
+
+  const payload: any = {};
+  if (updates.name !== undefined) payload.name = updates.name;
+  if (updates.ownerId !== undefined) payload.owner_id = updates.ownerId;
+  if (updates.has_lms_track !== undefined) payload.has_lms_track = updates.has_lms_track;
+  if (updates.column_order !== undefined) payload.column_order = updates.column_order;
+
+  const { data, error } = await sb.from('projects').update(payload).eq('id', projectId).select('*').single();
+  if (error) throw error;
+  return data ? {
+    id: data.id,
+    name: data.name,
+    createdAt: data.created_at,
+    ownerId: data.owner_id,
+    has_lms_track: Boolean(data.has_lms_track),
+    column_order: data.column_order || null
+  } : null;
+}
+
+export async function createCoursePhase(
+  courseId: string,
+  phaseName: string,
+  type: 'client' | 'internal',
+  dates?: { clientDate?: string; internalStartDate?: string; internalEndDate?: string },
+  metadata?: Record<string, any>
+): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) throw new Error("Supabase client is not initialized.");
+
+  if (type === 'client') {
+    const { error } = await sb.from('client_phases').insert({
+      course_id: courseId,
+      entity_level: 'course',
+      phase_name: phaseName,
+      client_date: dates?.clientDate || null,
+      source_file_ref: 'Manual LMS Track',
+      status: 'Pending',
+      metadata: metadata || {}
+    });
+    if (error) throw error;
+  } else {
+    const { error } = await sb.from('internal_phases').insert({
+      course_id: courseId,
+      entity_level: 'course',
+      phase_name: phaseName,
+      internal_start_date: dates?.internalStartDate || null,
+      internal_end_date: dates?.internalEndDate || null,
+      source_file_ref: 'Manual LMS Track',
+      status: 'Pending',
+      metadata: metadata || {}
+    });
+    if (error) throw error;
+  }
+}
+
+export async function updateCourseMetadata(
+  courseId: string,
+  metadata: Record<string, any>
+): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) throw new Error("Supabase client is not initialized.");
+  const { error } = await sb.from('courses').update({ metadata }).eq('id', courseId);
+  if (error) {
+    console.warn("Could not update course metadata:", error.message);
+  }
+}
+
+export async function updateModuleMetadata(
+  moduleId: string,
+  metadata: Record<string, any>
+): Promise<void> {
+  if (!isUuid(moduleId)) return;
+  const sb = getSupabase();
+  if (!sb) throw new Error("Supabase client is not initialized.");
+  const { error } = await sb.from('modules').update({ metadata }).eq('id', moduleId);
+  if (error) {
+    console.warn("Could not update module metadata:", error.message);
+    throw error;
+  }
+}
+
+export async function getOrCreateCourse(
+  projectId: string,
+  courseName: string,
+  code?: string
+): Promise<{ success: boolean; course?: any; isNew?: boolean; error?: string }> {
+  if (!isUuid(projectId)) {
+    return { success: false, error: 'Invalid project ID.' };
+  }
+  const sb = getSupabase();
+  if (!sb) {
+    return { success: false, error: 'Supabase client is not initialized.' };
+  }
+  const normName = courseName.trim();
+  if (!normName) {
+    return { success: false, error: 'Course name is required.' };
+  }
+
+  try {
+    const { data: existing, error: findErr } = await sb
+      .from('courses')
+      .select('*')
+      .eq('project_id', projectId)
+      .ilike('name', normName)
+      .maybeSingle();
+
+    if (findErr) throw findErr;
+
+    if (existing) {
+      if (code && code.trim() && existing.code !== code.trim()) {
+        await sb.from('courses').update({ code: code.trim() }).eq('id', existing.id);
+        existing.code = code.trim();
+      }
+      return { success: true, course: existing, isNew: false };
+    }
+
+    // Insert new course (code defaults to name)
+    const assignedCode = (code && code.trim()) ? code.trim() : normName;
+    const { data: newCourse, error: insertErr } = await sb
+      .from('courses')
+      .insert({
+        project_id: projectId,
+        name: normName,
+        code: assignedCode,
+        metadata: {}
+      })
+      .select('*')
+      .single();
+
+    if (insertErr || !newCourse) {
+      throw new Error(insertErr?.message || 'Failed to create course.');
+    }
+
+    await writeAuditLog({
+      actionType: 'course_create',
+      entityType: 'course',
+      entityId: newCourse.id,
+      entityLabel: normName,
+      oldValue: null,
+      newValue: { project_id: projectId, name: normName, code: normName }
+    });
+
+    return { success: true, course: newCourse, isNew: true };
+  } catch (err: any) {
+    console.error('getOrCreateCourse error:', err);
+    return { success: false, error: err.message || 'Failed to create course.' };
+  }
+}
+
 export async function deleteModules(moduleIds: string[]): Promise<void> {
   if (!moduleIds || moduleIds.length === 0) return;
   const sb = getSupabase();
@@ -1064,7 +1252,8 @@ export async function createModule(
   name: string,
   language?: string,
   internalPhaseNames?: string[],
-  clientPhaseNames?: string[]
+  clientPhaseNames?: string[],
+  metadata?: Record<string, any>
 ): Promise<{ success: boolean; moduleId?: string; error?: string }> {
   if (!isUuid(courseId)) {
     return { success: false, error: 'Invalid course ID.' };
@@ -1074,26 +1263,26 @@ export async function createModule(
     return { success: false, error: 'Supabase client is not initialized.' };
   }
 
-  const normCode = code.trim();
   const normName = name.trim();
+  const normCode = (code || normName).trim();
   const normLang = language && language.trim() ? language.trim() : 'English';
 
-  if (!normCode || !normName) {
-    return { success: false, error: 'Module code and module name are required.' };
+  if (!normName) {
+    return { success: false, error: 'Module name is required.' };
   }
 
   try {
-    // Check if module already exists under this course with same code and language
+    // Check if module already exists under this course with same name/code and language
     const { data: existing } = await sb
       .from('modules')
       .select('id')
       .eq('course_id', courseId)
-      .eq('code', normCode)
+      .eq('name', normName)
       .eq('language', normLang)
       .maybeSingle();
 
     if (existing) {
-      return { success: false, error: `Module "${normCode}" with language "${normLang}" already exists in this course.` };
+      return { success: false, error: `Module "${normName}" with language "${normLang}" already exists in this course.` };
     }
 
     // Insert module
@@ -1103,7 +1292,8 @@ export async function createModule(
         course_id: courseId,
         code: normCode,
         name: normName,
-        language: normLang
+        language: normLang,
+        metadata: metadata || {}
       })
       .select('id')
       .single();
@@ -1122,30 +1312,34 @@ export async function createModule(
       ? clientPhaseNames
       : [];
 
-    const internalToInsert = finalInternalNames.map(phName => ({
+    const internalToInsert = finalInternalNames.map((phName, idx) => ({
       module_id: moduleId,
       phase_name: phName,
+      phase_sequence: idx + 1,
       source_file_ref: 'Manual Creation',
       status: 'Pending'
     }));
 
-    const clientToInsert = finalClientNames.map(phName => ({
+    const clientToInsert = finalClientNames.map((phName, idx) => ({
       module_id: moduleId,
       phase_name: phName,
-      source_file_ref: 'Manual Creation'
+      phase_sequence: idx + 1,
+      source_file_ref: 'Manual Creation',
+      status: 'Pending'
     }));
 
     if (internalToInsert.length > 0) {
       const { error: phErr } = await sb.from('internal_phases').insert(internalToInsert);
       if (phErr) {
-        console.warn('Warning adding default internal phases for new module:', phErr.message);
+        console.error('Warning adding default internal phases for new module:', phErr.message);
       }
     }
 
     if (clientToInsert.length > 0) {
       const { error: phErr } = await sb.from('client_phases').insert(clientToInsert);
       if (phErr) {
-        console.warn('Warning adding default client phases for new module:', phErr.message);
+        console.error('Error adding client phases for new module:', phErr.message);
+        throw phErr;
       }
     }
 
@@ -1155,7 +1349,7 @@ export async function createModule(
       entityId: moduleId,
       entityLabel: `${normCode} - ${normName}`,
       oldValue: null,
-      newValue: { course_id: courseId, code: normCode, name: normName, language: normLang }
+      newValue: { course_id: courseId, code: normCode, name: normName, language: normLang, metadata: metadata || {} }
     });
 
     return { success: true, moduleId };
@@ -1735,12 +1929,13 @@ export async function fetchAllDashboardData(
     pQuery = pQuery.in('id', allowedProjectIds);
   }
   
-  const [pRes, cRes, mRes, phRes] = await Promise.all([
+  const [pRes, cRes, mRes, phRes, cpRes] = await Promise.all([
     pQuery.order('created_at', { ascending: false }),
-    sb.from('courses').select('id, project_id, code, name').order('code', { ascending: true }),
+    sb.from('courses').select('id, project_id, code, name, metadata').order('code', { ascending: true })
+      .then(res => res.error ? sb.from('courses').select('id, project_id, code, name').order('code', { ascending: true }) : res),
     sb.from('modules').select('id, course_id, code, name, language, metadata').order('code', { ascending: true }),
-    sb.from('consolidated_phases_view').select('id, module_id, phase_name, phase_type, phase_type_phase, client_date, internal_start_date, internal_end_date, source_file_ref, source_file, assigned_to, status, rejection_note, metadata')
-      .then(res => res.error ? sb.from('internal_phases').select('id, module_id, phase_name, phase_type, phase_type_phase, client_date, internal_start_date, internal_end_date, source_file_ref, source_file, assigned_to, status, rejection_note, metadata') : res)
+    sb.from('consolidated_phases_view').select('*'),
+    sb.from('client_phases').select('id, status, metadata')
   ]);
 
   if (pRes.error) throw pRes.error;
@@ -1748,11 +1943,19 @@ export async function fetchAllDashboardData(
   if (mRes.error) throw mRes.error;
   if (phRes.error) throw phRes.error;
 
+  const clientStatusMap = new Map<string, string>();
+  (cpRes?.data || []).forEach((cp: any) => {
+    const st = cp.status || cp.metadata?.status;
+    if (st) clientStatusMap.set(String(cp.id), st);
+  });
+
   const projects: Project[] = (pRes.data || []).map(p => ({
     id: p.id,
     name: p.name,
     createdAt: p.created_at,
-    ownerId: p.owner_id
+    ownerId: p.owner_id,
+    has_lms_track: Boolean(p.has_lms_track),
+    column_order: p.column_order || null
   }));
 
   const projectIds = new Set(projects.map(p => p.id));
@@ -1763,7 +1966,8 @@ export async function fetchAllDashboardData(
       id: c.id,
       projectId: c.project_id,
       code: c.code,
-      name: c.name
+      name: c.name,
+      metadata: (c as any).metadata || {}
     }));
 
   const courseIds = new Set(courses.map(c => c.id));
@@ -1782,23 +1986,37 @@ export async function fetchAllDashboardData(
   const moduleIds = new Set(modules.map(m => m.id));
 
   const phases: Phase[] = (phRes.data || [])
-    .filter(ph => moduleIds.has(ph.module_id))
-    .map(ph => ({
-      id: ph.id,
-      moduleId: ph.module_id,
-      phaseName: ph.phase_name,
-      phaseType: ph.phase_type,
-      phaseTypePhase: ph.phase_type_phase || (ph as any).type_phase || null,
-      clientDate: ph.client_date,
-      internalStartDate: ph.internal_start_date,
-      internalEndDate: ph.internal_end_date,
-      sourceFileRef: ph.source_file_ref,
-      sourceFile: ph.source_file,
-      assignedTo: ph.assigned_to || null,
-      status: ph.status || ph.metadata?.status || null,
-      rejectionNote: ph.rejection_note || null,
-      metadata: ph.metadata || {}
-    }));
+    .filter(ph => (ph.module_id && moduleIds.has(ph.module_id)) || (ph.course_id && courseIds.has(ph.course_id)))
+    .map(ph => {
+      const cId = ph.client_phase_id || (ph.source_file === 'Client' ? ph.id : null);
+      const iId = ph.internal_phase_id || (ph.source_file === 'Internal' ? ph.id : null);
+      const cStatus = (cId ? clientStatusMap.get(String(cId)) : null) || (clientStatusMap.get(String(ph.id))) || (ph.source_file === 'Client' ? ph.status : null) || null;
+      const iStatus = ph.status || ph.metadata?.status || null;
+      const resolvedStatus = (ph.source_file === 'Client' ? (cStatus || 'Pending') : (iStatus || cStatus || 'Pending'));
+
+      return {
+        id: ph.id,
+        moduleId: ph.module_id || null,
+        courseId: ph.course_id || null,
+        entityLevel: (ph.entity_level || (ph.course_id && !ph.module_id ? 'course' : 'module')) as 'module' | 'course',
+        phaseName: ph.phase_name,
+        phaseType: ph.phase_type,
+        phaseTypePhase: ph.phase_type_phase || (ph as any).type_phase || null,
+        clientDate: ph.client_date,
+        internalStartDate: ph.internal_start_date,
+        internalEndDate: ph.internal_end_date,
+        sourceFileRef: ph.source_file_ref,
+        sourceFile: ph.source_file,
+        assignedTo: ph.assigned_to || null,
+        status: resolvedStatus as Phase['status'],
+        clientStatus: (cStatus || 'Pending') as Phase['status'],
+        internalStatus: (iStatus || 'Pending') as Phase['status'],
+        clientPhaseId: cId ? String(cId) : null,
+        internalPhaseId: iId ? String(iId) : null,
+        rejectionNote: ph.rejection_note || null,
+        metadata: ph.metadata || (ph as any).internal_metadata || (ph as any).client_metadata || {}
+      };
+    });
 
   return { projects, courses, modules, phases };
 }
@@ -2599,60 +2817,129 @@ export async function getEmployeeCapacityData(
   const sb = getSupabase();
   if (!sb) return [];
 
-  const holidayList = await getHolidays();
-  const holidayDates = holidayList.map(h => h.date);
+  const [employees, holidayList, projectsRes, coursesRes, modulesRes, phasesRes] = await Promise.all([
+    getEmployees(),
+    getHolidays(),
+    sb.from('projects').select('id, name'),
+    sb.from('courses').select('id, name, code, project_id'),
+    sb.from('modules').select('id, name, code, course_id'),
+    sb.from('internal_phases').select('*').not('assigned_to', 'is', null)
+  ]);
 
-  const employees = await getEmployees();
-
-  const totalBusinessDays = workingDaysBetween(startDateStr, endDateStr, holidayDates);
-  const availableDays = totalBusinessDays > 0 ? totalBusinessDays : 1;
-
-  const { data: phasesData, error } = await sb
-    .from('internal_phases')
-    .select('*, modules(name, code, courses(name, code, projects(name)))')
-    .not('assigned_to', 'is', null);
-
-  if (error) {
-    console.error("Error fetching capacity phases:", error);
-    throw error;
+  if (phasesRes.error) {
+    console.error("Error fetching capacity phases:", phasesRes.error);
+    throw phasesRes.error;
   }
 
+  const holidayDates = (holidayList || []).map(h => h.date);
+
+  // Available working days in the selected window (inclusive of start and end dates)
+  const totalBusinessDays = calculateInclusiveDuration(startDateStr, endDateStr, holidayDates);
+  const availableDays = Math.max(1, totalBusinessDays);
+
+  // Build lookup maps for fast hierarchy resolution (Project -> Course -> Module)
+  const projectMap = new Map<string, string>();
+  (projectsRes.data || []).forEach((p: any) => projectMap.set(String(p.id), p.name || ''));
+
+  const courseMap = new Map<string, { name: string; code: string; projectId: string }>();
+  (coursesRes.data || []).forEach((c: any) => {
+    courseMap.set(String(c.id), {
+      name: c.name || '',
+      code: c.code || '',
+      projectId: String(c.project_id || '')
+    });
+  });
+
+  const moduleMap = new Map<string, { name: string; code: string; courseId: string }>();
+  (modulesRes.data || []).forEach((m: any) => {
+    moduleMap.set(String(m.id), {
+      name: m.name || '',
+      code: m.code || '',
+      courseId: String(m.course_id || '')
+    });
+  });
+
   const employeeMap: Record<string, EmployeeCapacityPhase[]> = {};
-  employees.forEach(emp => {
+  (employees || []).forEach(emp => {
     employeeMap[emp.id] = [];
   });
 
-  (phasesData || []).forEach(ph => {
+  (phasesRes.data || []).forEach((ph: any) => {
     if (!ph.assigned_to) return;
-    if (ph.status === 'Completed') return;
+    
+    // Skip completed or approved phases as they no longer consume active workload capacity
+    const normStatus = (ph.status || '').trim().toLowerCase();
+    if (normStatus === 'completed' || normStatus === 'approved' || normStatus === 'done') return;
 
-    const pStart = ph.internal_start_date || ph.client_date;
-    const pEnd = ph.internal_end_date || ph.client_date || pStart;
+    const rawStart = ph.internal_start_date || ph.client_date;
+    const rawEnd = ph.internal_end_date || ph.client_date || rawStart;
 
-    if (!pStart && !pEnd) return;
+    if (!rawStart && !rawEnd) return;
 
-    const phaseStart = pStart || pEnd;
-    const phaseEnd = pEnd || pStart;
+    const pStart = rawStart || rawEnd;
+    const pEnd = rawEnd || rawStart;
 
-    const windowStart = startDateStr;
-    const windowEnd = endDateStr;
+    const phaseStart = pStart <= pEnd ? pStart : pEnd;
+    const phaseEnd = pStart <= pEnd ? pEnd : pStart;
 
-    if (phaseEnd < windowStart || phaseStart > windowEnd) {
+    // Check if phase overlaps with the query window [startDateStr, endDateStr]
+    if (phaseEnd < startDateStr || phaseStart > endDateStr) {
       return;
     }
 
-    const overlapStart = phaseStart < windowStart ? windowStart : phaseStart;
-    const overlapEnd = phaseEnd > windowEnd ? windowEnd : phaseEnd;
+    const overlapStart = phaseStart < startDateStr ? startDateStr : phaseStart;
+    const overlapEnd = phaseEnd > endDateStr ? endDateStr : phaseEnd;
 
-    const daysInWindow = Math.max(1, workingDaysBetween(overlapStart, overlapEnd, holidayDates));
+    const daysInWindow = calculateInclusiveDuration(overlapStart, overlapEnd, holidayDates);
 
-    const projName = (ph.modules as any)?.courses?.projects?.name || 'Unmapped Project';
-    const courseCodeName = `${(ph.modules as any)?.courses?.code || ''} - ${(ph.modules as any)?.courses?.name || ''}`;
-    const moduleCodeName = `${(ph.modules as any)?.code || ''} - ${(ph.modules as any)?.name || ''}`;
+    // Resolve project, course, and module names reliably
+    let projName = 'Unmapped Project';
+    let courseCodeName = '-';
+    let moduleCodeName = '-';
+
+    if (ph.module_id && moduleMap.has(String(ph.module_id))) {
+      const mod = moduleMap.get(String(ph.module_id))!;
+      const mCode = (mod.code || '').trim();
+      const mName = (mod.name || '').trim();
+      if (mCode && mName && mCode.toLowerCase() !== mName.toLowerCase()) {
+        moduleCodeName = `${mCode} - ${mName}`;
+      } else {
+        moduleCodeName = mName || mCode || '-';
+      }
+
+      if (mod.courseId && courseMap.has(mod.courseId)) {
+        const crs = courseMap.get(mod.courseId)!;
+        const cCode = (crs.code || '').trim();
+        const cName = (crs.name || '').trim();
+        if (cCode && cName && cCode.toLowerCase() !== cName.toLowerCase()) {
+          courseCodeName = `${cCode} - ${cName}`;
+        } else {
+          courseCodeName = cName || cCode || '-';
+        }
+
+        if (crs.projectId && projectMap.has(crs.projectId)) {
+          projName = projectMap.get(crs.projectId) || 'Unmapped Project';
+        }
+      }
+    } else if (ph.course_id && courseMap.has(String(ph.course_id))) {
+      const crs = courseMap.get(String(ph.course_id))!;
+      const cCode = (crs.code || '').trim();
+      const cName = (crs.name || '').trim();
+      if (cCode && cName && cCode.toLowerCase() !== cName.toLowerCase()) {
+        courseCodeName = `${cCode} - ${cName}`;
+      } else {
+        courseCodeName = cName || cCode || '-';
+      }
+
+      moduleCodeName = 'Course Track';
+      if (crs.projectId && projectMap.has(crs.projectId)) {
+        projName = projectMap.get(crs.projectId) || 'Unmapped Project';
+      }
+    }
 
     const capPhase: EmployeeCapacityPhase = {
       id: ph.id,
-      phaseName: ph.phase_name,
+      phaseName: ph.phase_name || 'Unnamed Phase',
       projectName: projName,
       courseCodeName,
       moduleCodeName,
@@ -2668,10 +2955,13 @@ export async function getEmployeeCapacityData(
     }
   });
 
-  return employees.map(emp => {
+  return (employees || []).map(emp => {
     const assigned = employeeMap[emp.id] || [];
+    // Sort assigned phases chronologically by start date
+    assigned.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+
     const totalAllocatedDays = assigned.reduce((sum, p) => sum + p.workingDaysInWindow, 0);
-    const capacityPct = Math.round((totalAllocatedDays / availableDays) * 100);
+    const capacityPct = availableDays > 0 ? Math.round((totalAllocatedDays / availableDays) * 100) : 0;
 
     let statusCategory: 'green' | 'yellow' | 'red' = 'green';
     if (capacityPct > 100) {
@@ -2680,14 +2970,20 @@ export async function getEmployeeCapacityData(
       statusCategory = 'yellow';
     }
 
+    // Count phase pairs that actually overlap in working days within this window
     let overlappingCount = 0;
     for (let i = 0; i < assigned.length; i++) {
       for (let j = i + 1; j < assigned.length; j++) {
         const p1 = assigned[i];
         const p2 = assigned[j];
         if (p1.startDate && p1.endDate && p2.startDate && p2.endDate) {
-          if (p1.startDate <= p2.endDate && p1.endDate >= p2.startDate) {
-            overlappingCount++;
+          const oStart = p1.startDate > p2.startDate ? p1.startDate : p2.startDate;
+          const oEnd = p1.endDate < p2.endDate ? p1.endDate : p2.endDate;
+          if (oStart <= oEnd) {
+            const overlapDays = calculateInclusiveDuration(oStart, oEnd, holidayDates);
+            if (overlapDays > 0) {
+              overlappingCount++;
+            }
           }
         }
       }
@@ -2867,12 +3163,14 @@ export async function fetchExecutiveMetrics(
   const employees = await getEmployees();
   const empMap = new Map(employees.map(e => [e.id, e.name]));
 
-  // Group phases by module
+  // Group phases by module or course
   const modulePhasesMap = new Map<string, Phase[]>();
   phases.forEach(p => {
-    const list = modulePhasesMap.get(p.moduleId) || [];
+    const parentKey = p.moduleId || p.courseId;
+    if (!parentKey) return;
+    const list = modulePhasesMap.get(parentKey) || [];
     list.push(p);
-    modulePhasesMap.set(p.moduleId, list);
+    modulePhasesMap.set(parentKey, list);
   });
 
   // Calculate At-Risk phases & metrics
@@ -2884,8 +3182,8 @@ export async function fetchExecutiveMetrics(
     const targetDate = p.internalEndDate || p.clientDate || p.internalStartDate;
     if (!targetDate) return;
 
-    const mod = moduleMap.get(p.moduleId);
-    const course = mod ? courseMap.get(mod.courseId) : undefined;
+    const mod = p.moduleId ? moduleMap.get(p.moduleId) : undefined;
+    const course = mod ? courseMap.get(mod.courseId) : (p.courseId ? courseMap.get(p.courseId) : undefined);
     const project = course ? projectMap.get(course.projectId) : undefined;
 
     const isOverdue = p.status !== 'Completed' && targetDate < todayStr;
@@ -2898,8 +3196,9 @@ export async function fetchExecutiveMetrics(
       const diffMs = today.getTime() - new Date(targetDate).getTime();
       const daysDelayed = Math.max(1, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
 
-      // Count downstream sibling phases in module
-      const sibs = modulePhasesMap.get(p.moduleId) || [];
+      // Count downstream sibling phases in module or course
+      const parentKey = p.moduleId || p.courseId || '';
+      const sibs = modulePhasesMap.get(parentKey) || [];
       const downstreamImpactCount = sibs.filter(s => s.id !== p.id && s.status !== 'Completed').length;
 
       atRiskPhases.push({
@@ -2910,7 +3209,7 @@ export async function fetchExecutiveMetrics(
           ? (mod.code && mod.code.trim().toLowerCase() !== mod.name.trim().toLowerCase()
               ? `${mod.code} - ${mod.name}`
               : mod.name)
-          : 'Module',
+          : (course ? `LMS Track - ${course.code}` : 'Scope'),
         assignedToName: p.assignedTo ? empMap.get(p.assignedTo) || 'Assigned Lead' : 'Unassigned',
         targetDate,
         daysDelayed,
@@ -2933,7 +3232,7 @@ export async function fetchExecutiveMetrics(
     const projCourseIds = new Set(projCourses.map(c => c.id));
     const projModules = modules.filter(m => projCourseIds.has(m.courseId));
     const projModuleIds = new Set(projModules.map(m => m.id));
-    const projPhases = phases.filter(p => projModuleIds.has(p.moduleId));
+    const projPhases = phases.filter(p => (p.moduleId && projModuleIds.has(p.moduleId)) || (p.courseId && projCourseIds.has(p.courseId)));
 
     const totalPhasesCount = projPhases.length;
     const completedPhasesCount = projPhases.filter(p => p.status === 'Completed').length;
@@ -3243,34 +3542,11 @@ export async function saveClientInternalMappings(
 
 
 export async function savePhaseGaps(
-  projectId: string,
-  gaps: PhaseGap[]
+  _projectId: string,
+  _gaps: PhaseGap[]
 ): Promise<{ success: boolean; error?: string }> {
-  const sb = getSupabase();
-  if (!sb || !projectId || gaps.length === 0) return { success: true };
-
-  try {
-    const rows = gaps.map(g => ({
-      project_id: projectId,
-      earlier_phase_id: g.earlierPhaseId,
-      later_phase_id: g.laterPhaseId,
-      working_days_gap: g.workingDaysGap,
-      gap_type: g.gapType || 'internal_to_internal'
-    }));
-
-    const { error } = await sb
-      .from('phase_gaps')
-      .upsert(rows, { onConflict: 'project_id,earlier_phase_id,later_phase_id' });
-
-    if (error) {
-      console.error("Error saving phase_gaps:", error.message);
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err.message };
-  }
+  // Deprecated: Dynamic in-memory gap calculation has replaced static phase_gaps table persistence
+  return { success: true };
 }
 
 

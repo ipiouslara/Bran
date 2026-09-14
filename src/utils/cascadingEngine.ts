@@ -1,7 +1,8 @@
 /**
  * Bidirectional Cascading Engine for BRAN v2.0
  * Handles forward and backward date propagation across internal & client phases,
- * respecting zero-lag gaps, phase durations, and completed phase exclusions.
+ * respecting dynamically computed in-memory zero-lag gaps, phase durations,
+ * and completed phase firewalls.
  */
 
 import { Phase, ClientPhase, InternalPhase, PhaseGap, ClientInternalMapping } from '../types';
@@ -28,46 +29,128 @@ export interface CascadeResult {
   skippedCompletedPhases: string[];
 }
 
+export interface SequenceConflict {
+  phaseId: string;
+  phaseName: string;
+  predecessorId?: string;
+  predecessorName?: string;
+  reason: string;
+  message?: string;
+  gap: number;
+}
+
 /**
- * Recalculate dates bidirectionally starting from a modified phase date.
+ * Detect sequence conflicts (inverted start/end or negative gap between consecutive phases).
+ */
+export function detectSequenceConflicts(
+  phases: Phase[],
+  holidays: string[] = []
+): SequenceConflict[] {
+  const conflicts: SequenceConflict[] = [];
+
+  // Group phases by module or course entity
+  const entityGroups = new Map<string, Phase[]>();
+  phases.forEach(p => {
+    const key = p.moduleId || p.courseId || 'default';
+    const list = entityGroups.get(key) || [];
+    list.push(p);
+    entityGroups.set(key, list);
+  });
+
+  entityGroups.forEach((groupPhases) => {
+    const internalPhases = groupPhases
+      .filter(p => p.sourceFile === 'Internal' || !p.sourceFile || p.sourceFile !== 'Client' || !!p.internalStartDate || !!p.internalEndDate)
+      .sort((a, b) => (a.phaseSequence ?? 999) - (b.phaseSequence ?? 999));
+
+    // 1. Check intra-phase conflict (start date > end date)
+    internalPhases.forEach(p => {
+      if (p.internalStartDate && p.internalEndDate) {
+        if (p.internalStartDate > p.internalEndDate) {
+          const reason = `Sequence Conflict: "${p.phaseName}" start date (${p.internalStartDate}) is after its end date (${p.internalEndDate}).`;
+          conflicts.push({
+            phaseId: p.id,
+            phaseName: p.phaseName,
+            reason,
+            message: reason,
+            gap: -1
+          });
+        }
+      }
+    });
+
+    // 2. Check inter-phase conflict (successor starts before predecessor ends)
+    for (let i = 0; i < internalPhases.length - 1; i++) {
+      const pred = internalPhases[i];
+      const succ = internalPhases[i + 1];
+
+      if (pred.internalEndDate && succ.internalStartDate) {
+        const gap = calculateZeroLagGap(pred.internalEndDate, succ.internalStartDate, holidays);
+        if (gap < 0 || succ.internalStartDate < pred.internalEndDate) {
+          const reason = `Sequence Conflict: "${succ.phaseName}" starts before predecessor "${pred.phaseName}" finishes. Adjust dates to establish a valid positive sequence.`;
+          conflicts.push({
+            phaseId: succ.id,
+            phaseName: succ.phaseName,
+            predecessorId: pred.id,
+            predecessorName: pred.phaseName,
+            reason,
+            message: reason,
+            gap
+          });
+        }
+      }
+    }
+  });
+
+  return conflicts;
+}
+
+/**
+ * Recalculate dates bidirectionally starting from a modified phase date using in-memory dynamic gaps.
  */
 export function runBidirectionalCascade({
   modifiedPhaseId,
   modifiedField,
   newDate,
   allPhases,
-  phaseGaps,
-  clientMappings,
-  holidays
+  phaseGaps = [],
+  clientMappings = [],
+  holidays = []
 }: {
   modifiedPhaseId: string;
   modifiedField: 'internalStartDate' | 'internalEndDate' | 'clientDate';
   newDate: string;
   allPhases: Phase[];
-  phaseGaps: PhaseGap[];
-  clientMappings: ClientInternalMapping[];
-  holidays: string[];
+  phaseGaps?: PhaseGap[];
+  clientMappings?: ClientInternalMapping[];
+  holidays?: string[];
 }): CascadeResult {
+  // Snapshot original phases to measure existing dynamic gaps before shift
+  const origPhasesMap = new Map<string, Phase>(allPhases.map(p => [p.id, { ...p }]));
   const phaseMap = new Map<string, Phase>(allPhases.map(p => [p.id, { ...p }]));
   const targetPhase = phaseMap.get(modifiedPhaseId);
 
   if (!targetPhase) {
-    return { updatedPhases: allPhases, updatedGaps: phaseGaps, skippedCompletedPhases: [] };
+    return { updatedPhases: allPhases, updatedGaps: [], skippedCompletedPhases: [] };
   }
 
   const skippedCompleted: Set<string> = new Set();
   const modifiedPhaseIds: Set<string> = new Set([modifiedPhaseId]);
 
-  const moduleId = targetPhase.moduleId;
-  const modulePhases = Array.from(phaseMap.values()).filter(p => p.moduleId === moduleId);
+  // Support both module-level and course-level scope
+  const targetParentKey = targetPhase.moduleId || targetPhase.courseId;
+  const modulePhases = Array.from(phaseMap.values()).filter(p => 
+    targetPhase.moduleId ? p.moduleId === targetPhase.moduleId : p.courseId === targetPhase.courseId
+  );
+
+  const isClientPhase = (p: Phase) => p.sourceFile === 'Client' || (!!p.clientDate && !p.internalStartDate && !p.internalEndDate);
 
   const internalPhases = modulePhases
-    .filter(p => p.internalPhaseId || p.internalStartDate || p.internalEndDate)
-    .sort((a, b) => getWorkflowIndex(a.phaseName) - getWorkflowIndex(b.phaseName));
+    .filter(p => !isClientPhase(p) && (p.internalPhaseId || p.internalStartDate || p.internalEndDate || p.sourceFile === 'Internal' || !p.sourceFile))
+    .sort((a, b) => (a.phaseSequence ?? 999) - (b.phaseSequence ?? 999));
 
   const clientPhases = modulePhases
-    .filter(p => p.clientPhaseId || p.clientDate)
-    .sort((a, b) => getWorkflowIndex(a.phaseName) - getWorkflowIndex(b.phaseName));
+    .filter(p => isClientPhase(p))
+    .sort((a, b) => (a.phaseSequence ?? 999) - (b.phaseSequence ?? 999));
 
   // Helper to find internal anchor for a client phase
   const findAnchorForClientPhase = (cp: Phase): { anchorInternal: Phase | undefined; anchorPoint: 'Start' | 'End' } => {
@@ -109,16 +192,25 @@ export function runBidirectionalCascade({
 
       if (anchorInternal) {
         anchorInternalId = anchorInternal.id;
-        if (anchorInternal.status !== 'Completed') {
-          const gapRecord = phaseGaps.find(
-            g => (g.earlierPhaseId === anchorInternal.id || g.earlierPhaseId === anchorInternal.internalPhaseId) &&
-                 (g.laterPhaseId === targetPhase.id || g.laterPhaseId === targetPhase.clientPhaseId)
-          );
-          const gapDays = gapRecord ? gapRecord.workingDaysGap : 0;
-          const newAnchorDate = gapDays > 0 ? addZeroLagGap(newDate, -gapDays, holidays) : newDate;
+        if (anchorInternal.status !== 'Completed' && anchorInternal.status !== 'Approved') {
+          const origAnchor = origPhasesMap.get(anchorInternal.id);
+          const origClient = origPhasesMap.get(targetPhase.id);
+
+          const origBaseDate = anchorPoint === 'Start'
+            ? (origAnchor?.internalStartDate || origAnchor?.internalEndDate)
+            : (origAnchor?.internalEndDate || origAnchor?.internalStartDate);
+
+          const dynamicGap = (origBaseDate && origClient?.clientDate)
+            ? calculateZeroLagGap(origBaseDate, origClient.clientDate, holidays)
+            : 0;
+
+          const newAnchorDate = dynamicGap > 0 
+            ? addZeroLagGap(newDate, -dynamicGap, holidays) 
+            : newDate;
+
           const duration = calculateInclusiveDuration(
-            anchorInternal.internalStartDate || newAnchorDate,
-            anchorInternal.internalEndDate || newAnchorDate,
+            origAnchor?.internalStartDate || newAnchorDate,
+            origAnchor?.internalEndDate || newAnchorDate,
             holidays
           ) || 1;
 
@@ -142,17 +234,18 @@ export function runBidirectionalCascade({
         for (let i = targetClientIdx; i < clientPhases.length - 1; i++) {
           const cur = clientPhases[i];
           const nxt = clientPhases[i + 1];
-          if (nxt.status === 'Completed') {
+          if (nxt.status === 'Completed' || nxt.status === 'Approved') {
             skippedCompleted.add(nxt.phaseName || nxt.id);
-            continue;
+            break;
           }
-          const gapRecord = phaseGaps.find(
-            g => (g.earlierPhaseId === cur.id || g.earlierPhaseId === cur.clientPhaseId) &&
-                 (g.laterPhaseId === nxt.id || g.laterPhaseId === nxt.clientPhaseId)
-          );
-          const gapDays = gapRecord ? gapRecord.workingDaysGap : 0;
+          const origCur = origPhasesMap.get(cur.id);
+          const origNxt = origPhasesMap.get(nxt.id);
+          const dynamicGap = (origCur?.clientDate && origNxt?.clientDate)
+            ? Math.max(0, calculateZeroLagGap(origCur.clientDate, origNxt.clientDate, holidays))
+            : 0;
+
           if (cur.clientDate) {
-            const nextClientDate = addZeroLagGap(cur.clientDate, gapDays, holidays);
+            const nextClientDate = addZeroLagGap(cur.clientDate, dynamicGap, holidays);
             if (nxt.clientDate !== nextClientDate) {
               nxt.clientDate = nextClientDate;
               modifiedPhaseIds.add(nxt.id);
@@ -163,17 +256,21 @@ export function runBidirectionalCascade({
         for (let i = targetClientIdx; i > 0; i--) {
           const cur = clientPhases[i];
           const prv = clientPhases[i - 1];
-          if (prv.status === 'Completed') {
+          if (prv.status === 'Completed' || prv.status === 'Approved') {
             skippedCompleted.add(prv.phaseName || prv.id);
-            continue;
+            if (cur.clientDate && prv.clientDate && cur.clientDate <= prv.clientDate) {
+              throw new Error(`Cannot cascade earlier: Collides with locked historical milestone "${prv.phaseName}".`);
+            }
+            break;
           }
-          const gapRecord = phaseGaps.find(
-            g => (g.earlierPhaseId === prv.id || g.earlierPhaseId === prv.clientPhaseId) &&
-                 (g.laterPhaseId === cur.id || g.laterPhaseId === cur.clientPhaseId)
-          );
-          const gapDays = gapRecord ? gapRecord.workingDaysGap : 0;
+          const origCur = origPhasesMap.get(cur.id);
+          const origPrv = origPhasesMap.get(prv.id);
+          const dynamicGap = (origPrv?.clientDate && origCur?.clientDate)
+            ? Math.max(0, calculateZeroLagGap(origPrv.clientDate, origCur.clientDate, holidays))
+            : 0;
+
           if (cur.clientDate) {
-            const prevClientDate = addZeroLagGap(cur.clientDate, -(gapDays + 1), holidays);
+            const prevClientDate = addZeroLagGap(cur.clientDate, -(dynamicGap + 1), holidays);
             if (prv.clientDate !== prevClientDate) {
               prv.clientDate = prevClientDate;
               modifiedPhaseIds.add(prv.id);
@@ -184,8 +281,8 @@ export function runBidirectionalCascade({
     }
   } else if (modifiedField === 'internalStartDate') {
     const oldDuration = calculateInclusiveDuration(
-      targetPhase.internalStartDate || newDate,
-      targetPhase.internalEndDate || newDate,
+      origPhasesMap.get(targetPhase.id)?.internalStartDate || newDate,
+      origPhasesMap.get(targetPhase.id)?.internalEndDate || newDate,
       holidays
     ) || 1;
     targetPhase.internalStartDate = newDate;
@@ -193,8 +290,8 @@ export function runBidirectionalCascade({
     targetPhase.internalEndDate = addWorkingDays(newDate, Math.max(0, oldDuration - 1), holidays);
   } else if (modifiedField === 'internalEndDate') {
     const oldDuration = calculateInclusiveDuration(
-      targetPhase.internalStartDate || newDate,
-      targetPhase.internalEndDate || newDate,
+      origPhasesMap.get(targetPhase.id)?.internalStartDate || newDate,
+      origPhasesMap.get(targetPhase.id)?.internalEndDate || newDate,
       holidays
     ) || 1;
     targetPhase.internalEndDate = newDate;
@@ -211,27 +308,30 @@ export function runBidirectionalCascade({
       const currentPhase = internalPhases[i];
       const nextPhase = internalPhases[i + 1];
 
-      // Skip completed next phase (immovable anchor)
-      if (nextPhase.status === 'Completed') {
+      // Completed phase firewall: stops forward cascade
+      if (nextPhase.status === 'Completed' || nextPhase.status === 'Approved') {
         skippedCompleted.add(nextPhase.phaseName || nextPhase.id);
-        continue;
+        break;
       }
 
-      const gapRecord = phaseGaps.find(
-        g => (g.earlierPhaseId === currentPhase.id || g.earlierPhaseId === currentPhase.internalPhaseId) &&
-             (g.laterPhaseId === nextPhase.id || g.laterPhaseId === nextPhase.internalPhaseId)
-      );
+      // Compute dynamic in-memory gap from original dates before shift
+      const origCurEnd = origPhasesMap.get(currentPhase.id)?.internalEndDate || origPhasesMap.get(currentPhase.id)?.internalStartDate;
+      const origNextStart = origPhasesMap.get(nextPhase.id)?.internalStartDate;
 
-      const gapDays = gapRecord ? gapRecord.workingDaysGap : 0;
+      const gapDays = (origCurEnd && origNextStart)
+        ? Math.max(0, calculateZeroLagGap(origCurEnd, origNextStart, holidays))
+        : 0;
+
       const currentEndDate = currentPhase.internalEndDate || currentPhase.internalStartDate;
 
       if (currentEndDate) {
         const nextNewStartDate = addZeroLagGap(currentEndDate, gapDays, holidays);
-        const duration = calculateInclusiveDuration(
-          nextPhase.internalStartDate || nextNewStartDate,
-          nextPhase.internalEndDate || nextNewStartDate,
-          holidays
-        ) || 1;
+        const origNextStartVal = origPhasesMap.get(nextPhase.id)?.internalStartDate;
+        const origNextEndVal = origPhasesMap.get(nextPhase.id)?.internalEndDate;
+
+        const duration = (origNextStartVal && origNextEndVal)
+          ? calculateInclusiveDuration(origNextStartVal, origNextEndVal, holidays)
+          : (calculateInclusiveDuration(nextPhase.internalStartDate || nextNewStartDate, nextPhase.internalEndDate || nextNewStartDate, holidays) || 1);
 
         if (nextPhase.internalStartDate !== nextNewStartDate) {
           nextPhase.internalStartDate = nextNewStartDate;
@@ -246,28 +346,48 @@ export function runBidirectionalCascade({
       const currentPhase = internalPhases[i];
       const prevPhase = internalPhases[i - 1];
 
-      // Skip completed previous phase (immovable anchor)
-      if (prevPhase.status === 'Completed') {
+      // Completed phase firewall:
+      // If previous phase is completed, check if shifting backward collides with it!
+      if (prevPhase.status === 'Completed' || prevPhase.status === 'Approved') {
         skippedCompleted.add(prevPhase.phaseName || prevPhase.id);
-        continue;
+        if (currentPhase.internalStartDate && prevPhase.internalEndDate) {
+          const gap = calculateZeroLagGap(prevPhase.internalEndDate, currentPhase.internalStartDate, holidays);
+          if (gap < 0 || currentPhase.internalStartDate <= prevPhase.internalEndDate) {
+            throw new Error(`Cannot cascade earlier: Collides with locked historical milestone "${prevPhase.phaseName}".`);
+          }
+        }
+        break;
       }
 
-      const gapRecord = phaseGaps.find(
-        g => (g.earlierPhaseId === prevPhase.id || g.earlierPhaseId === prevPhase.internalPhaseId) &&
-             (g.laterPhaseId === currentPhase.id || g.laterPhaseId === currentPhase.internalPhaseId)
-      );
+      const origCurStart = origPhasesMap.get(currentPhase.id)?.internalStartDate;
+      const origPrevEnd = origPhasesMap.get(prevPhase.id)?.internalEndDate;
 
-      const gapDays = gapRecord ? gapRecord.workingDaysGap : 0;
+      const gapDays = (origPrevEnd && origCurStart)
+        ? Math.max(0, calculateZeroLagGap(origPrevEnd, origCurStart, holidays))
+        : 0;
+
       const currentStartDate = currentPhase.internalStartDate;
 
       if (currentStartDate) {
         // Step backward from currentStartDate by gapDays + 1 working day to find prev end date
         const prevNewEndDate = addZeroLagGap(currentStartDate, -(gapDays + 1), holidays);
-        const duration = calculateInclusiveDuration(
-          prevPhase.internalStartDate || prevNewEndDate,
-          prevPhase.internalEndDate || prevNewEndDate,
-          holidays
-        ) || 1;
+
+        // Check if prevNewEndDate collides with any prior completed phase
+        if (i > 1) {
+          const priorPhase = internalPhases[i - 2];
+          if ((priorPhase.status === 'Completed' || priorPhase.status === 'Approved') && priorPhase.internalEndDate) {
+            if (prevNewEndDate < priorPhase.internalEndDate) {
+              throw new Error(`Cannot cascade earlier: Collides with locked historical milestone "${priorPhase.phaseName}".`);
+            }
+          }
+        }
+
+        const origPrevStartVal = origPhasesMap.get(prevPhase.id)?.internalStartDate;
+        const origPrevEndVal = origPhasesMap.get(prevPhase.id)?.internalEndDate;
+
+        const duration = (origPrevStartVal && origPrevEndVal)
+          ? calculateInclusiveDuration(origPrevStartVal, origPrevEndVal, holidays)
+          : (calculateInclusiveDuration(prevPhase.internalStartDate || prevNewEndDate, prevPhase.internalEndDate || prevNewEndDate, holidays) || 1);
 
         if (prevPhase.internalEndDate !== prevNewEndDate) {
           prevPhase.internalEndDate = prevNewEndDate;
@@ -278,35 +398,40 @@ export function runBidirectionalCascade({
     }
   }
 
-  // 3. CLIENT PHASE PROPAGATION
-  // Re-align all client phase dates linked to internal anchors (before and after)
+  // 3. CROSS-PLAN BRIDGE (Propagate internal anchor shifts to client milestones)
   if (internalPhases.length > 0) {
     clientPhases.forEach(cp => {
-      if (cp.status === 'Completed') {
+      if (cp.status === 'Completed' || cp.status === 'Approved') {
         skippedCompleted.add(cp.phaseName || cp.id);
         return;
       }
 
       if (modifiedField === 'clientDate' && (cp.id === modifiedPhaseId || cp.clientPhaseId === modifiedPhaseId)) {
-        // Do not overwrite the explicitly edited client date
+        // Do not overwrite explicitly edited client date
         return;
       }
 
       const { anchorInternal, anchorPoint } = findAnchorForClientPhase(cp);
 
       if (anchorInternal) {
+        const origAnchorBase = anchorPoint === 'Start'
+          ? (origPhasesMap.get(anchorInternal.id)?.internalStartDate || origPhasesMap.get(anchorInternal.id)?.internalEndDate)
+          : (origPhasesMap.get(anchorInternal.id)?.internalEndDate || origPhasesMap.get(anchorInternal.id)?.internalStartDate);
+
+        const origClientDate = origPhasesMap.get(cp.id)?.clientDate;
+
+        const dynamicGap = (origAnchorBase && origClientDate)
+          ? calculateZeroLagGap(origAnchorBase, origClientDate, holidays)
+          : 0;
+
         const anchorBaseDate = anchorPoint === 'Start'
           ? (anchorInternal.internalStartDate || anchorInternal.internalEndDate)
           : (anchorInternal.internalEndDate || anchorInternal.internalStartDate);
 
         if (anchorBaseDate) {
-          const gapRecord = phaseGaps.find(
-            g => (g.earlierPhaseId === anchorInternal.id || g.earlierPhaseId === anchorInternal.internalPhaseId) &&
-                 (g.laterPhaseId === cp.id || g.laterPhaseId === cp.clientPhaseId)
-          );
-
-          const targetGap = gapRecord ? gapRecord.workingDaysGap : 0;
-          const newClientDate = targetGap > 0 ? addZeroLagGap(anchorBaseDate, targetGap, holidays) : anchorBaseDate;
+          const newClientDate = dynamicGap > 0 
+            ? addZeroLagGap(anchorBaseDate, dynamicGap, holidays) 
+            : (dynamicGap < 0 ? addZeroLagGap(anchorBaseDate, -(Math.abs(dynamicGap) + 1), holidays) : anchorBaseDate);
 
           if (cp.clientDate !== newClientDate) {
             cp.clientDate = newClientDate;
@@ -317,7 +442,7 @@ export function runBidirectionalCascade({
     });
   }
 
-  // Recompute updated gaps for all adjacent internal phases and client-anchor links
+  // Dynamically compute resulting gaps across internal phases for return metadata
   const updatedGaps: PhaseGap[] = [];
   for (let i = 0; i < internalPhases.length - 1; i++) {
     const p1 = internalPhases[i];

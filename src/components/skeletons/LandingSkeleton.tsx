@@ -30,7 +30,7 @@ export const LandingSkeleton: React.FC = () => {
       </div>
 
       {/* Landing Skeleton Content */}
-      <div className="relative z-10 w-full max-w-2xl px-6 mx-auto text-center space-y-8 animate-pulse">
+      <div className="relative z-10 w-full max-w-2xl px-6 mx-auto text-center space-y-8">
         {/* Logo placeholder */}
         <div className="flex justify-center">
           <img
@@ -60,8 +60,8 @@ export const LandingSkeleton: React.FC = () => {
 
         {/* Description placeholder lines */}
         <div className="space-y-2 max-w-lg mx-auto">
-          <div className="h-3.5 bg-white/10 rounded-full w-full" />
-          <div className="h-3 bg-white/10 rounded-full w-4/5 mx-auto" />
+          <div className="h-3.5 placeholder rounded-full w-full" />
+          <div className="h-3 placeholder rounded-full w-4/5 mx-auto" />
         </div>
 
         {/* Log In button placeholder */}

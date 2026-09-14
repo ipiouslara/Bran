@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Calendar, Trash2, RefreshCw } from 'lucide-react';
 import { getHolidays, toggleHoliday, HolidayEntry } from '../lib/db';
 
@@ -375,12 +376,17 @@ export default function HolidayCalendar({ theme, currentUser }: HolidayCalendarP
       </div>
 
       {/* ===== HOLIDAY LABEL MODAL ===== */}
-      {labelModalDate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { setLabelModalDate(null); setSelectedDay(null); }} />
-          <div className={`relative z-10 w-full max-w-sm mx-4 p-6 rounded-2xl border shadow-2xl ${
-            isDark ? 'bg-[#1B1D21] border-[#B1B7C3]/20' : 'bg-white border-neutral-200'
-          }`}>
+      {labelModalDate && createPortal(
+        <div 
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto"
+          onClick={() => { setLabelModalDate(null); setSelectedDay(null); }}
+        >
+          <div 
+            className={`relative w-full max-w-sm max-h-[90vh] my-auto p-6 rounded-2xl border shadow-2xl overflow-y-auto ${
+              isDark ? 'bg-[#1B1D21] border-[#B1B7C3]/20 text-white' : 'bg-white border-neutral-200 text-neutral-900'
+            }`}
+            onClick={e => e.stopPropagation()}
+          >
             <h3 className={`text-sm font-black mb-1 ${textPrimary}`}>
               {holidaySet.has(labelModalDate) ? 'Remove Holiday' : 'Mark as Holiday'}
             </h3>
@@ -418,7 +424,7 @@ export default function HolidayCalendar({ theme, currentUser }: HolidayCalendarP
             <div className="flex gap-2">
               <button
                 onClick={() => { setLabelModalDate(null); setSelectedDay(null); }}
-                className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
+                className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                   isDark ? 'border-[#B1B7C3]/15 text-neutral-400 hover:text-white hover:bg-neutral-800' : 'border-neutral-200 text-[#5A6072] hover:text-[#193661] hover:bg-neutral-100'
                 }`}
               >
@@ -427,7 +433,7 @@ export default function HolidayCalendar({ theme, currentUser }: HolidayCalendarP
               <button
                 onClick={confirmToggle}
                 disabled={!!toggling}
-                className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold text-white transition-all ${
+                className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold text-white transition-all cursor-pointer ${
                   holidaySet.has(labelModalDate)
                     ? 'bg-rose-500 hover:bg-rose-600'
                     : 'bg-[#2484C6] hover:bg-[#1a6fa8]'
@@ -437,7 +443,8 @@ export default function HolidayCalendar({ theme, currentUser }: HolidayCalendarP
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

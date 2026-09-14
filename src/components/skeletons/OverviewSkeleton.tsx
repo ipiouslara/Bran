@@ -9,15 +9,15 @@ export const OverviewSkeleton: React.FC<OverviewSkeletonProps> = ({
 }) => {
   const isDark = theme === 'dark';
   const bgCard = isDark ? 'bg-[#0D0D0D] border-neutral-800/80' : 'bg-white border-neutral-200';
-  const pulseBg = isDark ? 'bg-neutral-800/70' : 'bg-neutral-200';
+  const pulseBg = 'placeholder';
   const inputBg = isDark ? 'bg-[#121212] border-neutral-800/60' : 'bg-slate-100 border-neutral-200';
   const borderColor = isDark ? 'border-neutral-800/60' : 'border-neutral-200';
 
   return (
-    <div className="-mt-6 space-y-6 bg-[var(--bg-page)] text-[var(--text-main)] animate-pulse">
+    <div className="-mt-6 space-y-6 bg-[var(--bg-page)] text-[var(--text-main)]">
       {/* Header Bar */}
       <div className="h-[52px] flex items-center justify-between border-b border-[var(--border-subtle)] px-0">
-        <div className="h-7 w-32 rounded-md bg-neutral-800/70" />
+        <div className="h-7 w-32 rounded-md placeholder" />
         <div className={`h-8 w-48 rounded-lg ${inputBg}`} />
       </div>
 

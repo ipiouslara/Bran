@@ -86,11 +86,11 @@ function GlobalHolidaysModalComponent({ theme, currentUser, onClose, onChanged }
 
   const modalJSX = (
     <div 
-      className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-xs overflow-y-auto"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div 
-        className={`relative w-full max-w-xl max-h-[85vh] overflow-y-auto p-6 rounded-2xl border shadow-2xl ${
+        className={`relative w-full max-w-xl max-h-[90vh] my-auto overflow-y-auto p-6 rounded-2xl border shadow-2xl ${
           isDark ? 'bg-[#1B1D21] border-[#B1B7C3]/20 text-white' : 'bg-white border-slate-200 text-slate-900'
         }`}
         onClick={(e) => e.stopPropagation()}

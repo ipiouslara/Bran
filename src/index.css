@@ -77,6 +77,8 @@
   --text-muted: #64748B;
   --input-bg: #F1F5F9;
   --sidebar-bg: #FFFFFF;
+  --placeholder-base: rgba(0, 0, 0, 0.06);
+  --placeholder-shine: rgba(0, 0, 0, 0.14);
 }
 
 .dark {
@@ -88,6 +90,8 @@
   --text-muted: #A1A1AA;
   --input-bg: #121212;
   --sidebar-bg: #000000;
+  --placeholder-base: rgba(255, 255, 255, 0.05);
+  --placeholder-shine: rgba(255, 255, 255, 0.14);
 }
 
 /* ============================================================
@@ -339,35 +343,44 @@ body {
 }
 
 /* ============================================================
-   Shimmer Loading Skeleton
+   Pure CSS Shimmer Loading Skeleton / Placeholder (Sweep)
    ============================================================ */
+
+@keyframes sweep {
+  to {
+    background-position: -200% 0;
+  }
+}
 
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
 
+.placeholder,
 .skeleton {
   background: linear-gradient(
     90deg,
-    rgba(255,255,255,0.04) 25%,
-    rgba(255,255,255,0.09) 50%,
-    rgba(255,255,255,0.04) 75%
+    var(--placeholder-base, rgba(255, 255, 255, 0.05)) 25%,
+    var(--placeholder-shine, rgba(255, 255, 255, 0.14)) 50%,
+    var(--placeholder-base, rgba(255, 255, 255, 0.05)) 75%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.8s infinite;
-  border-radius: 6px;
+  animation: sweep 1.2s linear infinite;
 }
 
-.light-mode .skeleton {
+.light-mode .placeholder,
+.light-mode .skeleton,
+:root:not(.dark) .placeholder,
+:root:not(.dark) .skeleton {
   background: linear-gradient(
     90deg,
-    rgba(0,0,0,0.05) 25%,
-    rgba(0,0,0,0.10) 50%,
-    rgba(0,0,0,0.05) 75%
+    rgba(0, 0, 0, 0.06) 25%,
+    rgba(0, 0, 0, 0.14) 50%,
+    rgba(0, 0, 0, 0.06) 75%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.8s infinite;
+  animation: sweep 1.2s linear infinite;
 }
 
 /* ============================================================

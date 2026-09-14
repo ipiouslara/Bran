@@ -15,11 +15,11 @@ export const CardSkeleton: React.FC<CardSkeletonProps> = ({
 }) => {
   const isDark = theme === 'dark';
   const bgCard = isDark ? 'bg-[#0D0D0D] border-neutral-800/80' : 'bg-white border-neutral-200';
-  const pulseBg = isDark ? 'bg-neutral-800/60' : 'bg-neutral-200';
+  const pulseBg = 'placeholder';
 
   return (
     <div
-      className={`p-5 rounded-xl border ${bgCard} shadow-lg space-y-4 animate-pulse transition-colors ${className}`}
+      className={`p-5 rounded-xl border ${bgCard} shadow-lg space-y-4 transition-colors ${className}`}
     >
       <div className="flex items-center gap-3">
         {hasAvatar && (

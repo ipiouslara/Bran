@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { createPortal } from 'react-dom';
-import { Briefcase, Edit2, Trash2, Save, X, RefreshCw, AlertCircle, Check, Users, UserPlus, Calendar, Globe, Plus, ExternalLink, FolderKanban, Search } from 'lucide-react';
+import { Briefcase, Edit2, Trash2, Save, X, RefreshCw, AlertCircle, Check, Users, UserPlus, Calendar, Globe, Plus, ExternalLink, FolderKanban, Search, Settings } from 'lucide-react';
 import { Project, Course, Module, Phase, Employee } from '../types';
 import TableSkeleton from './skeletons/TableSkeleton';
 import ProjectHolidayModal from './ProjectHolidayModal';
@@ -13,6 +13,7 @@ import {
   writeAuditLog, 
   claimProjectOwnership, 
   deleteProject,
+  updateProject,
   getProjectLeadAssignments,
   assignLeadToProject,
   removeLeadFromProject,
@@ -75,6 +76,39 @@ export default function ProjectManagement({
   const [deletingProject, setDeletingProject] = useState<Project | null>(null);
   const [cascadeCounts, setCascadeCounts] = useState({ courses: 0, modules: 0, phases: 0 });
 
+  // LMS track support states
+  const [newProjectHasLmsTrack, setNewProjectHasLmsTrack] = useState(false);
+  const [settingsProject, setSettingsProject] = useState<Project | null>(null);
+  const [settingsProjectName, setSettingsProjectName] = useState('');
+  const [settingsProjectHasLms, setSettingsProjectHasLms] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  const handleOpenSettings = (project: Project) => {
+    setSettingsProject(project);
+    setSettingsProjectName(project.name);
+    setSettingsProjectHasLms(Boolean(project.has_lms_track));
+  };
+
+  const handleSaveSettings = async () => {
+    if (!settingsProject) return;
+    try {
+      setSavingSettings(true);
+      setError(null);
+      await updateProject(settingsProject.id, {
+        name: settingsProjectName.trim() || settingsProject.name,
+        has_lms_track: settingsProjectHasLms
+      });
+      setSettingsProject(null);
+      await loadData();
+      if (onProjectsChanged) onProjectsChanged();
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to update project settings.');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   const isAdminOrPM = currentUser?.role === 'Admin' || currentUser?.role === 'Project Manager';
 
   const loadData = async () => {
@@ -109,7 +143,8 @@ export default function ProjectManagement({
         id: p.id,
         name: p.name,
         ownerId: p.owner_id || undefined,
-        createdAt: p.created_at
+        createdAt: p.created_at,
+        has_lms_track: Boolean(p.has_lms_track)
       }));
 
       const rawCourses: Course[] = (crsRes.data || []).map(c => ({
@@ -182,6 +217,7 @@ export default function ProjectManagement({
           if (confirmClaim) {
             await claimProjectOwnership(existing.id, currentUser.id || '');
             setNewProjectName('');
+            setNewProjectHasLmsTrack(false);
             setShowCreateModal(false);
             await loadData();
             if (onProjectsChanged) onProjectsChanged();
@@ -198,7 +234,8 @@ export default function ProjectManagement({
         .from('projects')
         .insert({
           name: trimmedName,
-          owner_id: currentUser?.id || null
+          owner_id: currentUser?.id || null,
+          has_lms_track: newProjectHasLmsTrack
         })
         .select('*')
         .single();
@@ -211,10 +248,11 @@ export default function ProjectManagement({
         entityId: newProj.id,
         entityLabel: newProj.name,
         oldValue: null,
-        newValue: { name: newProj.name }
+        newValue: { name: newProj.name, has_lms_track: newProjectHasLmsTrack }
       });
 
       setNewProjectName('');
+      setNewProjectHasLmsTrack(false);
       setShowCreateModal(false);
       await loadData();
       if (onProjectsChanged) onProjectsChanged();
@@ -283,7 +321,10 @@ export default function ProjectManagement({
     const courseIds = projectCourses.map(c => c.id);
     const projectModules = modules.filter(m => courseIds.includes(m.courseId));
     const moduleIds = projectModules.map(m => m.id);
-    const projectPhases = phases.filter(ph => moduleIds.includes(ph.moduleId));
+    const projectPhases = phases.filter(ph => 
+      (ph.moduleId && moduleIds.includes(ph.moduleId)) ||
+      (ph.courseId && courseIds.includes(ph.courseId))
+    );
 
     setCascadeCounts({
       courses: projectCourses.length,
@@ -316,12 +357,15 @@ export default function ProjectManagement({
   const getProjectPhasesSummary = (projId: string) => {
     const projCourses = courses.filter(c => c.projectId === projId).map(c => c.id);
     const projModules = modules.filter(m => projCourses.includes(m.courseId)).map(m => m.id);
-    const rawPhases = phases.filter(ph => projModules.includes(ph.moduleId));
+    const rawPhases = phases.filter(ph => 
+      (ph.moduleId && projModules.includes(ph.moduleId)) ||
+      (ph.courseId && projCourses.includes(ph.courseId))
+    );
 
     // Deduplicate phases so start date, end date, and client date for the same phase entry are counted as 1 phase
     const uniquePhaseMap = new Map<string, Phase>();
     rawPhases.forEach(p => {
-      const key = `${p.moduleId}_${(p.phaseName || '').trim().toLowerCase()}_${(p.phaseType || '').trim().toLowerCase()}`;
+      const key = `${p.moduleId || p.courseId || ''}_${(p.phaseName || '').trim().toLowerCase()}_${(p.phaseType || '').trim().toLowerCase()}`;
       if (!uniquePhaseMap.has(key)) {
         uniquePhaseMap.set(key, p);
       } else {
@@ -482,11 +526,11 @@ export default function ProjectManagement({
             <p className="text-xs font-semibold text-[var(--text-muted)]">No project scopes match your search or filter parameters.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+          <div className="overflow-x-auto overscroll-x-contain touch-pan-x">
+            <table className="w-full text-left border-collapse text-xs min-w-[850px]">
               <thead>
                 <tr className="bg-[var(--input-bg)] border-b border-[var(--border-subtle)] text-[var(--text-muted)] uppercase tracking-wider font-semibold text-[10px]">
-                  <th className="p-4">Project Name</th>
+                  <th className="p-4 sticky left-0 z-10 bg-[var(--input-bg)] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Project Name</th>
                   {currentUser?.role !== 'Project Manager' && <th className="p-4">Owner</th>}
                   <th className="p-4">Courses / Modules</th>
                   <th className="p-4">Status</th>
@@ -511,7 +555,7 @@ export default function ProjectManagement({
                         }
                       }}
                     >
-                      <td className="p-4 font-semibold text-[var(--text-main)]">
+                      <td className="p-4 font-semibold text-[var(--text-main)] sticky left-0 z-10 bg-[var(--bg-card)] group-hover:bg-[var(--bg-card-hover)] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] transition-colors">
                         {editingProjectId === project.id ? (
                           <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                             <input
@@ -536,6 +580,11 @@ export default function ProjectManagement({
                         ) : (
                           <div className="flex items-center gap-2">
                             <span className="group-hover:text-[#1DAA58] transition-colors">{project.name}</span>
+                            {project.has_lms_track && (
+                              <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                                LMS
+                              </span>
+                            )}
                           </div>
                         )}
                       </td>
@@ -644,6 +693,13 @@ export default function ProjectManagement({
                                 <UserPlus className="w-3.5 h-3.5" />
                               </button>
                               <button
+                                onClick={() => handleOpenSettings(project)}
+                                className="p-1.5 hover:bg-neutral-800 text-neutral-400 hover:text-white rounded-lg cursor-pointer transition-colors"
+                                title="Project Settings"
+                              >
+                                <Settings className="w-3.5 h-3.5" />
+                              </button>
+                              <button
                                 onClick={() => {
                                   setEditingProjectId(project.id);
                                   setEditName(project.name);
@@ -674,14 +730,20 @@ export default function ProjectManagement({
       </div>
 
       {showCreateModal && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
-          <div className="max-w-md w-full p-6 rounded-2xl bg-[#121214] border border-white/10 text-white text-xs shadow-2xl space-y-4">
+        <div 
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in overflow-y-auto"
+          onClick={() => setShowCreateModal(false)}
+        >
+          <div 
+            className="relative max-w-md w-full max-h-[90vh] my-auto p-6 rounded-2xl bg-[#121214] border border-white/10 text-white text-xs shadow-2xl space-y-4 overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2">
                 <FolderKanban className="w-4 h-4 text-[#008DA5]" />
                 <h3 className="text-sm font-bold">Create New Project Scope</h3>
               </div>
-              <button onClick={() => setShowCreateModal(false)} className="text-neutral-400 hover:text-white">
+              <button onClick={() => setShowCreateModal(false)} className="text-neutral-400 hover:text-white cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -697,19 +759,100 @@ export default function ProjectManagement({
               />
             </div>
 
+            <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-900/60 border border-neutral-800">
+              <div>
+                <span className="block text-xs font-semibold text-neutral-200">Enable LMS Staging Track for this project</span>
+                <span className="block text-[10px] text-neutral-400">Activates course-level LMS tracking in Project Editor</span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={newProjectHasLmsTrack}
+                  onChange={e => setNewProjectHasLmsTrack(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#008DA5]"></div>
+              </label>
+            </div>
+
             <div className="flex justify-end gap-3 pt-2">
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 rounded-xl border border-neutral-800 text-neutral-400 hover:bg-neutral-800 font-semibold"
+                className="px-4 py-2 rounded-xl border border-neutral-800 text-neutral-400 hover:bg-neutral-800 font-semibold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 disabled={!newProjectName.trim() || creatingProject}
                 onClick={handleCreateProject}
-                className="px-4 py-2 rounded-xl bg-[#008DA5] hover:bg-[#007A90] text-white font-bold transition-all disabled:opacity-50"
+                className="px-4 py-2 rounded-xl bg-[#008DA5] hover:bg-[#007A90] text-white font-bold transition-all disabled:opacity-50 cursor-pointer"
               >
                 {creatingProject ? 'Creating...' : 'Create Project'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {settingsProject && createPortal(
+        <div 
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in overflow-y-auto"
+          onClick={() => setSettingsProject(null)}
+        >
+          <div 
+            className="relative max-w-md w-full max-h-[90vh] my-auto p-6 rounded-2xl bg-[#121214] border border-white/10 text-white text-xs shadow-2xl space-y-4 overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <Settings className="w-4 h-4 text-[#008DA5]" />
+                <h3 className="text-sm font-bold">Project Settings — {settingsProject.name}</h3>
+              </div>
+              <button onClick={() => setSettingsProject(null)} className="text-neutral-400 hover:text-white cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-[10px] uppercase font-bold text-neutral-400 mb-1">Project Name</label>
+              <input
+                type="text"
+                value={settingsProjectName}
+                onChange={e => setSettingsProjectName(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-neutral-900 text-white border border-neutral-800 focus:outline-none focus:ring-1 focus:ring-[#008DA5]"
+              />
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-900/60 border border-neutral-800">
+              <div>
+                <span className="block text-xs font-semibold text-neutral-200">Enable LMS Staging Track for this project</span>
+                <span className="block text-[10px] text-neutral-400">Enables dynamic course-level LMS tracking in Project Editor</span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settingsProjectHasLms}
+                  onChange={e => setSettingsProjectHasLms(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#008DA5]"></div>
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setSettingsProject(null)}
+                className="px-4 py-2 rounded-xl border border-neutral-800 text-neutral-400 hover:bg-neutral-800 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={savingSettings || !settingsProjectName.trim()}
+                onClick={handleSaveSettings}
+                className="px-4 py-2 rounded-xl bg-[#008DA5] hover:bg-[#007A90] text-white font-bold transition-all disabled:opacity-50"
+              >
+                {savingSettings ? 'Saving...' : 'Save Settings'}
               </button>
             </div>
           </div>
@@ -726,16 +869,22 @@ export default function ProjectManagement({
         />
       )}
 
-      {assignLeadProject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className={`max-w-md w-full p-6 rounded-lg border text-xs shadow-2xl ${
-            theme === 'dark' ? 'bg-[#1B1D21] border-[#B1B7C3]/15 text-white' : 'bg-white border-neutral-200 text-neutral-900'
-          }`}>
+      {assignLeadProject && createPortal(
+        <div 
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-xs overflow-y-auto"
+          onClick={() => setAssignLeadProject(null)}
+        >
+          <div 
+            className={`relative max-w-md w-full max-h-[90vh] my-auto p-6 rounded-2xl border text-xs shadow-2xl overflow-y-auto ${
+              theme === 'dark' ? 'bg-[#1B1D21] border-[#B1B7C3]/15 text-white' : 'bg-white border-neutral-200 text-neutral-900'
+            }`}
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-3">
               <h3 className={`text-sm font-bold uppercase tracking-wider ${theme === 'dark' ? 'text-white' : 'text-[#193661]'}`}>
                 Assign Lead — {assignLeadProject.name}
               </h3>
-              <button onClick={() => setAssignLeadProject(null)} className="p-1 hover:bg-neutral-500/20 rounded">
+              <button onClick={() => setAssignLeadProject(null)} className="p-1 hover:bg-neutral-500/20 rounded cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -834,7 +983,8 @@ export default function ProjectManagement({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Project Holiday Calendar Modal */}
@@ -849,10 +999,16 @@ export default function ProjectManagement({
 
       {/* Delete Cascade Impact Warning Modal */}
       {deletingProject && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-150">
-          <div className={`max-w-md w-full p-6 rounded-xl border text-xs shadow-2xl ${
-            theme === 'dark' ? 'bg-[#1B1D21] border-[#B1B7C3]/15 text-white' : 'bg-white border-neutral-200 text-neutral-900'
-          }`}>
+        <div 
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-md animate-in fade-in duration-150 overflow-y-auto"
+          onClick={() => setDeletingProject(null)}
+        >
+          <div 
+            className={`relative max-w-md w-full max-h-[90vh] my-auto p-6 rounded-2xl border text-xs shadow-2xl overflow-y-auto ${
+              theme === 'dark' ? 'bg-[#1B1D21] border-[#B1B7C3]/15 text-white' : 'bg-white border-neutral-200 text-neutral-900'
+            }`}
+            onClick={e => e.stopPropagation()}
+          >
             <h3 className="text-sm font-bold text-rose-500 mb-2 uppercase tracking-wide">
               Cascade Deletion Impact Confirmation
             </h3>
@@ -886,7 +1042,7 @@ export default function ProjectManagement({
                 onClick={handleConfirmDelete}
                 className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded font-bold transition-all shadow-md active:scale-97 cursor-pointer"
               >
-                Confirm Destructive Delete
+                Confirm Delete
               </button>
             </div>
           </div>

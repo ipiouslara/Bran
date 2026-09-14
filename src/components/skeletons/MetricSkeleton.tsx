@@ -13,10 +13,10 @@ export const MetricSkeleton: React.FC<MetricSkeletonProps> = ({
 }) => {
   const isDark = theme === 'dark';
   const bgCard = isDark ? 'bg-[#0D0D0D] border-neutral-800/80' : 'bg-white border-neutral-200';
-  const pulseBg = isDark ? 'bg-neutral-800/60' : 'bg-neutral-200';
+  const pulseBg = 'placeholder';
 
   return (
-    <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 animate-pulse ${className}`}>
+    <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 ${className}`}>
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}

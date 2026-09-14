@@ -15,6 +15,7 @@ type ViewState = 'landing' | 'login' | 'change_password';
 
 interface LandingPageProps {
   onLoginSuccess: (email: string, role: string, employeeId?: string, name?: string) => void;
+  theme?: 'dark' | 'light';
 }
 
 // ─── Floating Pill Shape ──────────────────────────────────────────────────────
@@ -26,9 +27,10 @@ interface PillProps {
   height?: number;
   rotate?: number;
   gradient?: string;
+  isDark?: boolean;
 }
 
-function Pill({ className = '', delay = 0, width = 400, height = 100, rotate = 0, gradient = 'from-white/[0.08]' }: PillProps) {
+function Pill({ className = '', delay = 0, width = 400, height = 100, rotate = 0, gradient = 'from-white/[0.08]', isDark = false }: PillProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: -150, rotate: rotate - 15 }}
@@ -42,10 +44,12 @@ function Pill({ className = '', delay = 0, width = 400, height = 100, rotate = 0
         style={{ width, height }}
       >
         <div
-          className={`absolute inset-0 rounded-full bg-gradient-to-r to-transparent ${gradient} backdrop-blur-[2px]`}
+          className={`absolute inset-0 rounded-full bg-gradient-to-r to-transparent ${gradient} ${isDark ? 'backdrop-blur-[2px]' : 'backdrop-blur-xs'}`}
           style={{
-            border: '2px solid rgba(255,255,255,0.08)',
-            boxShadow: '0 8px 32px 0 rgba(255,255,255,0.04)',
+            border: isDark ? '2px solid rgba(255,255,255,0.08)' : '1.5px solid rgba(255,255,255,0.85)',
+            boxShadow: isDark
+              ? '0 8px 32px 0 rgba(255,255,255,0.04)'
+              : '0 12px 36px -4px rgba(15,23,42,0.06), 0 0 0 1px rgba(226,232,240,0.6) inset',
           }}
         />
       </motion.div>
@@ -55,17 +59,18 @@ function Pill({ className = '', delay = 0, width = 400, height = 100, rotate = 0
 
 // ─── Company Logo ─────────────────────────────────────────────────────────
 
-function CompanyLogo({ height = 80, showSlogan = false }: { height?: number; showSlogan?: boolean }) {
+function CompanyLogo({ height = 80, showSlogan = false, isDark = false }: { height?: number; showSlogan?: boolean; isDark?: boolean }) {
   return (
     <div className="flex flex-col items-center gap-2">
       <img
         src="/mediant-logo.png"
         alt="Mediant Labs"
         draggable={false}
+        className={!isDark ? 'mix-blend-multiply' : ''}
         style={{ height, width: 'auto', objectFit: 'contain' }}
       />
       {showSlogan && (
-        <p className="text-white/45 text-sm font-medium tracking-wide">
+        <p className={`${isDark ? 'text-white/45' : 'text-slate-500'} text-sm font-medium tracking-wide`}>
           Where solutions meet strategy
         </p>
       )}
@@ -75,7 +80,8 @@ function CompanyLogo({ height = 80, showSlogan = false }: { height?: number; sho
 
 // ─── Landing Page ─────────────────────────────────────────────────────────────
 
-export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
+export default function LandingPage({ onLoginSuccess, theme = 'light' }: LandingPageProps) {
+  const isDark = theme === 'dark';
   const [view, setView]         = useState<ViewState>('landing');
 
   // Login form
@@ -134,10 +140,34 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
   };
 
   const demoRoles: { role: 'Admin' | 'Project Manager' | 'Lead' | 'Employee'; label: string; color: string }[] = [
-    { role: 'Admin',           label: 'Admin',    color: 'text-rose-400   border-rose-500/25   bg-rose-500/10   hover:bg-rose-500/20' },
-    { role: 'Project Manager', label: 'PM',       color: 'text-[#2484C6]  border-[#2484C6]/25  bg-[#2484C6]/10  hover:bg-[#2484C6]/20' },
-    { role: 'Lead',            label: 'Lead',     color: 'text-[#008DA5]  border-[#008DA5]/25  bg-[#008DA5]/10  hover:bg-[#008DA5]/20' },
-    { role: 'Employee',        label: 'Employee', color: 'text-[#1DAA58]  border-[#1DAA58]/25  bg-[#1DAA58]/10  hover:bg-[#1DAA58]/20' },
+    {
+      role: 'Admin',
+      label: 'Admin',
+      color: isDark
+        ? 'text-rose-400 border-rose-500/25 bg-rose-500/10 hover:bg-rose-500/20'
+        : 'text-rose-600 border-rose-200 bg-rose-50/80 hover:bg-rose-100',
+    },
+    {
+      role: 'Project Manager',
+      label: 'PM',
+      color: isDark
+        ? 'text-[#2484C6] border-[#2484C6]/25 bg-[#2484C6]/10 hover:bg-[#2484C6]/20'
+        : 'text-sky-700 border-sky-200 bg-sky-50/80 hover:bg-sky-100',
+    },
+    {
+      role: 'Lead',
+      label: 'Lead',
+      color: isDark
+        ? 'text-[#008DA5] border-[#008DA5]/25 bg-[#008DA5]/10 hover:bg-[#008DA5]/20'
+        : 'text-teal-700 border-teal-200 bg-teal-50/80 hover:bg-teal-100',
+    },
+    {
+      role: 'Employee',
+      label: 'Employee',
+      color: isDark
+        ? 'text-[#1DAA58] border-[#1DAA58]/25 bg-[#1DAA58]/10 hover:bg-[#1DAA58]/20'
+        : 'text-emerald-700 border-emerald-200 bg-emerald-50/80 hover:bg-emerald-100',
+    },
   ];
 
   // ── Login handler ────────────────────────────────────────────────────────
@@ -243,29 +273,33 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
 
   // ── Input styles ──────────────────────────────────────────────────────────
 
-  const inputClass =
-    'w-full px-4 py-3 text-sm rounded-xl text-white outline-none transition-all duration-200 placeholder-white/25 bg-white/[0.06] border border-white/[0.10] focus:border-[#1DAA58]/60 focus:ring-1 focus:ring-[#1DAA58]/25';
+  const inputClass = isDark
+    ? 'w-full px-4 py-3 text-sm rounded-xl text-white outline-none transition-all duration-200 placeholder-white/25 bg-white/[0.06] border border-white/[0.10] focus:border-[#1DAA58]/60 focus:ring-1 focus:ring-[#1DAA58]/25'
+    : 'w-full px-4 py-3 text-sm rounded-xl text-slate-900 outline-none transition-all duration-200 placeholder-slate-400 bg-slate-50/90 hover:bg-white border border-slate-200 focus:border-[#1DAA58] focus:ring-2 focus:ring-[#1DAA58]/20 focus:bg-white';
 
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-[#030712]">
+    <div className={`relative min-h-screen w-full flex items-center justify-center overflow-hidden transition-colors duration-300 ${isDark ? 'bg-[#030712]' : 'bg-[#F8FAFC]'}`}>
 
       {/* ── Background radial glow ── */}
       <div className="absolute inset-0 pointer-events-none">
         <div
           className="absolute inset-0"
           style={{
-            background:
-              'radial-gradient(ellipse 70% 60% at 20% 30%, rgba(29,170,88,0.07) 0%, transparent 70%), radial-gradient(ellipse 60% 55% at 80% 70%, rgba(36,132,198,0.09) 0%, transparent 70%)',
+            background: isDark
+              ? 'radial-gradient(ellipse 70% 60% at 20% 30%, rgba(29,170,88,0.07) 0%, transparent 70%), radial-gradient(ellipse 60% 55% at 80% 70%, rgba(36,132,198,0.09) 0%, transparent 70%)'
+              : 'radial-gradient(ellipse 75% 65% at 20% 25%, rgba(29,170,88,0.09) 0%, transparent 65%), radial-gradient(ellipse 70% 60% at 80% 75%, rgba(36,132,198,0.11) 0%, transparent 65%), radial-gradient(ellipse 50% 45% at 50% 50%, rgba(0,141,165,0.05) 0%, transparent 70%)',
           }}
         />
         {/* Subtle grid */}
         <div
-          className="absolute inset-0 opacity-[0.022]"
+          className="absolute inset-0"
           style={{
-            backgroundImage:
-              'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)',
+            opacity: isDark ? 0.022 : 0.045,
+            backgroundImage: isDark
+              ? 'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)'
+              : 'linear-gradient(rgba(15,23,42,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.4) 1px, transparent 1px)',
             backgroundSize: '60px 60px',
           }}
         />
@@ -273,11 +307,11 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
 
       {/* ── Floating background pills (always visible) ── */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <Pill delay={0.3} width={580} height={130} rotate={12}  gradient="from-[#1DAA58]/[0.15]" className="left-[-8%] top-[18%]" />
-        <Pill delay={0.5} width={500} height={115} rotate={-15} gradient="from-[#2484C6]/[0.15]" className="right-[-4%] top-[62%]" />
-        <Pill delay={0.4} width={300} height={75}  rotate={-8}  gradient="from-[#008DA5]/[0.12]" className="left-[6%]  bottom-[10%]" />
-        <Pill delay={0.6} width={190} height={50}  rotate={20}  gradient="from-[#1DAA58]/[0.10]" className="right-[14%] top-[8%]" />
-        <Pill delay={0.7} width={150} height={40}  rotate={-25} gradient="from-[#2484C6]/[0.10]" className="left-[24%] top-[4%]" />
+        <Pill delay={0.3} width={580} height={130} rotate={12}  isDark={isDark} gradient={isDark ? "from-[#1DAA58]/[0.15]" : "from-[#1DAA58]/[0.20]"} className="left-[-8%] top-[18%]" />
+        <Pill delay={0.5} width={500} height={115} rotate={-15} isDark={isDark} gradient={isDark ? "from-[#2484C6]/[0.15]" : "from-[#2484C6]/[0.20]"} className="right-[-4%] top-[62%]" />
+        <Pill delay={0.4} width={300} height={75}  rotate={-8}  isDark={isDark} gradient={isDark ? "from-[#008DA5]/[0.12]" : "from-[#008DA5]/[0.18]"} className="left-[6%]  bottom-[10%]" />
+        <Pill delay={0.6} width={190} height={50}  rotate={20}  isDark={isDark} gradient={isDark ? "from-[#1DAA58]/[0.10]" : "from-[#1DAA58]/[0.16]"} className="right-[14%] top-[8%]" />
+        <Pill delay={0.7} width={150} height={40}  rotate={-25} isDark={isDark} gradient={isDark ? "from-[#2484C6]/[0.10]" : "from-[#2484C6]/[0.16]"} className="left-[24%] top-[4%]" />
       </div>
 
       {/* ── Content (animated view swap) ── */}
@@ -294,14 +328,14 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
               transition={{ duration: 0.55, ease: [0.25, 0.4, 0.25, 1] }}
               className="max-w-2xl mx-auto text-center space-y-8"
             >
-              {/* Company logo — full PNG, no background */}
+              {/* Company logo */}
               <motion.div
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.15, duration: 0.7 }}
                 className="flex items-center justify-center"
               >
-                <CompanyLogo height={110} showSlogan={false} />
+                <CompanyLogo height={110} showSlogan={false} isDark={isDark} />
               </motion.div>
 
               {/* BRAN — gradient wordmark */}
@@ -320,6 +354,7 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text',
                     letterSpacing: '-0.02em',
+                    filter: isDark ? 'none' : 'drop-shadow(0 8px 24px rgba(29,170,88,0.15))',
                   }}
                 >
                   BRAN
@@ -331,7 +366,9 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.38, duration: 0.7 }}
-                className="text-base text-white/40 leading-relaxed font-light max-w-lg mx-auto"
+                className={`text-base leading-relaxed max-w-lg mx-auto ${
+                  isDark ? 'text-white/40 font-light' : 'text-slate-600 font-normal'
+                }`}
               >
                 The integrated operational engine for enterprise delivery timelines, team assignments,
                 and multi-region working-day schedule management.
@@ -349,13 +386,17 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
                   className="group relative inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full font-bold text-sm text-white overflow-hidden transition-all duration-300 hover:scale-[1.04] active:scale-[0.97] cursor-pointer"
                   style={{
                     background: 'linear-gradient(135deg, #1DAA58 0%, #2484C6 100%)',
-                    boxShadow: '0 0 30px rgba(29,170,88,0.28), 0 0 60px rgba(36,132,198,0.14)',
+                    boxShadow: isDark
+                      ? '0 0 30px rgba(29,170,88,0.28), 0 0 60px rgba(36,132,198,0.14)'
+                      : '0 10px 28px -3px rgba(29,170,88,0.38), 0 4px 14px rgba(36,132,198,0.28)',
                   }}
                 >
                   {/* Shimmer on hover */}
                   <span
                     className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-                    style={{ background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%)' }}
+                    style={{
+                      background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.28) 50%, transparent 70%)',
+                    }}
                   />
                   <span>Log In</span>
                   <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
@@ -376,21 +417,24 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
             >
               {/* Logo above form */}
               <div className="flex justify-center mb-3">
-                <CompanyLogo height={68} showSlogan={false} />
+                <CompanyLogo height={68} showSlogan={false} isDark={isDark} />
               </div>
 
               {/* Form card */}
               <div
                 className="rounded-2xl p-6 space-y-4"
                 style={{
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.09)',
-                  boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+                  background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.92)',
+                  backdropFilter: 'blur(16px)',
+                  border: isDark ? '1px solid rgba(255,255,255,0.09)' : '1px solid rgba(226,232,240,0.85)',
+                  boxShadow: isDark
+                    ? '0 20px 60px rgba(0,0,0,0.6)'
+                    : '0 20px 50px -10px rgba(15,23,42,0.10), 0 1px 3px rgba(15,23,42,0.05)',
                 }}
               >
                 <div>
-                  <h2 className="text-lg font-black text-white tracking-tight">Welcome back</h2>
-                  <p className="text-[11px] text-white/35 mt-0.5">Sign in with your Mediant Labs credentials</p>
+                  <h2 className={`text-lg font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>Welcome back</h2>
+                  <p className={`text-[11px] mt-0.5 ${isDark ? 'text-white/35' : 'text-slate-500'}`}>Sign in with your Mediant Labs credentials</p>
                 </div>
 
                 {/* Error */}
@@ -411,9 +455,9 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
                 <form onSubmit={handleLogin} className="space-y-3">
                   {/* Email */}
                   <div>
-                    <label className="block text-[11px] font-semibold text-white/45 uppercase tracking-wider mb-1.5">Email Address</label>
+                    <label className={`block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${isDark ? 'text-white/45' : 'text-slate-600'}`}>Email Address</label>
                     <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/25 pointer-events-none" />
+                      <Mail className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${isDark ? 'text-white/25' : 'text-slate-400'}`} />
                       <input
                         type="email"
                         required
@@ -427,9 +471,9 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
 
                   {/* Password */}
                   <div>
-                    <label className="block text-[11px] font-semibold text-white/45 uppercase tracking-wider mb-1.5">Password</label>
+                    <label className={`block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${isDark ? 'text-white/45' : 'text-slate-600'}`}>Password</label>
                     <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/25 pointer-events-none" />
+                      <Lock className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${isDark ? 'text-white/25' : 'text-slate-400'}`} />
                       <input
                         type={showPass ? 'text' : 'password'}
                         required
@@ -441,13 +485,13 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
                       <button
                         type="button"
                         onClick={() => setShowPass(!showPass)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/25 hover:text-white/60 transition-colors cursor-pointer"
+                        className={`absolute right-3.5 top-1/2 -translate-y-1/2 transition-colors cursor-pointer ${isDark ? 'text-white/25 hover:text-white/60' : 'text-slate-400 hover:text-slate-600'}`}
                       >
                         {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
-                    <p className="text-[10px] text-white/22 mt-1.5 leading-relaxed">
-                      Default password: <span className="font-mono text-white/35">{'<employeeId>@123'}</span> (e.g. <span className="font-mono text-white/35">ml004@123</span>)
+                    <p className={`text-[10px] mt-1.5 leading-relaxed ${isDark ? 'text-white/22' : 'text-slate-500'}`}>
+                      Default password: <span className={`font-mono ${isDark ? 'text-white/35' : 'text-slate-700 bg-slate-100 px-1 py-0.5 rounded'}`}>{'<employeeId>@123'}</span> (e.g. <span className={`font-mono ${isDark ? 'text-white/35' : 'text-slate-700 bg-slate-100 px-1 py-0.5 rounded'}`}>ml004@123</span>)
                     </p>
                   </div>
 
@@ -473,11 +517,11 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
                 </form>
 
                 {/* Demo Quick Login */}
-                <div className="pt-2 border-t border-white/[0.06]">
+                <div className={`pt-2 border-t ${isDark ? 'border-white/[0.06]' : 'border-slate-200'}`}>
                   <button
                     type="button"
                     onClick={() => setDemoOpen(!demoOpen)}
-                    className="w-full flex items-center justify-between text-[11px] text-white/35 hover:text-white/60 transition-colors cursor-pointer py-1"
+                    className={`w-full flex items-center justify-between text-[11px] transition-colors cursor-pointer py-1 ${isDark ? 'text-white/35 hover:text-white/60' : 'text-slate-500 hover:text-slate-800'}`}
                   >
                     <span className="font-semibold tracking-wide">Demo Quick Login</span>
                     <ChevronDown className={`w-3.5 h-3.5 transition-transform ${demoOpen ? 'rotate-180' : ''}`} />
@@ -504,7 +548,7 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
                             </button>
                           ))}
                         </div>
-                        <p className="text-[9px] text-white/20 text-center mt-2">
+                        <p className={`text-[9px] text-center mt-2 ${isDark ? 'text-white/20' : 'text-slate-400'}`}>
                           Uses <span className="font-mono">password123</span> or simulates a session
                         </p>
                       </motion.div>
@@ -516,7 +560,7 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
               {/* Back to landing */}
               <button
                 onClick={() => { setView('landing'); setError(null); }}
-                className="flex items-center gap-1.5 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer mx-auto"
+                className={`flex items-center gap-1.5 text-[11px] transition-colors cursor-pointer mx-auto ${isDark ? 'text-white/30 hover:text-white/60' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
                 Back
@@ -537,12 +581,15 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
               <div className="flex flex-col items-center gap-1.5 mb-2">
                 <div
                   className="w-12 h-12 rounded-full flex items-center justify-center"
-                  style={{ background: 'rgba(29,170,88,0.12)', border: '1px solid rgba(29,170,88,0.25)' }}
+                  style={{
+                    background: isDark ? 'rgba(29,170,88,0.12)' : 'rgba(29,170,88,0.10)',
+                    border: isDark ? '1px solid rgba(29,170,88,0.25)' : '1px solid rgba(29,170,88,0.30)',
+                  }}
                 >
                   <KeyRound className="w-5 h-5" style={{ color: '#1DAA58' }} />
                 </div>
-                <p className="text-white font-bold text-sm">Set your new password</p>
-                <p className="text-white/35 text-[11px] text-center leading-relaxed px-4">
+                <p className={`font-bold text-sm ${isDark ? 'text-white' : 'text-slate-900'}`}>Set your new password</p>
+                <p className={`text-[11px] text-center leading-relaxed px-4 ${isDark ? 'text-white/35' : 'text-slate-500'}`}>
                   This is your first login. Please set a personal password to continue.
                 </p>
               </div>
@@ -550,9 +597,12 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
               <div
                 className="rounded-2xl p-6 space-y-4"
                 style={{
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.09)',
-                  boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+                  background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.92)',
+                  backdropFilter: 'blur(16px)',
+                  border: isDark ? '1px solid rgba(255,255,255,0.09)' : '1px solid rgba(226,232,240,0.85)',
+                  boxShadow: isDark
+                    ? '0 20px 60px rgba(0,0,0,0.6)'
+                    : '0 20px 50px -10px rgba(15,23,42,0.10), 0 1px 3px rgba(15,23,42,0.05)',
                 }}
               >
                 {/* Error */}
@@ -573,9 +623,9 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
                 <form onSubmit={handleChangePassword} className="space-y-3">
                   {/* New Password */}
                   <div>
-                    <label className="block text-[11px] font-semibold text-white/45 uppercase tracking-wider mb-1.5">New Password</label>
+                    <label className={`block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${isDark ? 'text-white/45' : 'text-slate-600'}`}>New Password</label>
                     <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/25 pointer-events-none" />
+                      <Lock className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${isDark ? 'text-white/25' : 'text-slate-400'}`} />
                       <input
                         type={showNewPass ? 'text' : 'password'}
                         required
@@ -588,7 +638,7 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
                       <button
                         type="button"
                         onClick={() => setShowNewPass(!showNewPass)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/25 hover:text-white/60 transition-colors cursor-pointer"
+                        className={`absolute right-3.5 top-1/2 -translate-y-1/2 transition-colors cursor-pointer ${isDark ? 'text-white/25 hover:text-white/60' : 'text-slate-400 hover:text-slate-600'}`}
                       >
                         {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -597,9 +647,9 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
 
                   {/* Confirm Password */}
                   <div>
-                    <label className="block text-[11px] font-semibold text-white/45 uppercase tracking-wider mb-1.5">Confirm Password</label>
+                    <label className={`block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${isDark ? 'text-white/45' : 'text-slate-600'}`}>Confirm Password</label>
                     <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/25 pointer-events-none" />
+                      <Lock className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${isDark ? 'text-white/25' : 'text-slate-400'}`} />
                       <input
                         type={showNewPass ? 'text' : 'password'}
                         required
@@ -659,13 +709,17 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
       {/* Bottom edge vignette */}
       <div
         className="absolute inset-0 pointer-events-none"
-        style={{ background: 'linear-gradient(to top, rgba(3,7,18,0.8) 0%, transparent 35%, rgba(3,7,18,0.5) 100%)' }}
+        style={{
+          background: isDark
+            ? 'linear-gradient(to top, rgba(3,7,18,0.8) 0%, transparent 35%, rgba(3,7,18,0.5) 100%)'
+            : 'linear-gradient(to top, rgba(248,250,252,0.85) 0%, transparent 35%, rgba(248,250,252,0.4) 100%)',
+        }}
       />
 
       {/* Footer */}
       <p
         className="absolute bottom-4 left-0 right-0 text-center text-[10px] font-medium"
-        style={{ color: 'rgba(255,255,255,0.15)' }}
+        style={{ color: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(100,116,139,0.5)' }}
       >
         © 2026 Mediant Labs · BRAN Integrated Operational Engine
       </p>

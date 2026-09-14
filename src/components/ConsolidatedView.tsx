@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Fragment, useState, useEffect, useRef, useMemo } from 'react';
+import { Fragment, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import ConsolidatedViewSkeleton from './skeletons/ConsolidatedViewSkeleton';
 
@@ -383,21 +384,70 @@ export default function ConsolidatedView({
   const [sortField, setSortField] = useState<string>('date');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
 
+  // Helper to extract a custom metadata value with role-prefix prioritization & case insensitivity
+  const getCustomMetadataValue = useCallback((cleanKey: string, phMeta: any, modMeta: any) => {
+    const searchInObj = (obj: any) => {
+      if (!obj || typeof obj !== 'object') return undefined;
+      const lowerClean = cleanKey.toLowerCase();
+
+      // 1. Try active role prefix (e.g. "client:screens")
+      const modePrefix = `${mode}:`.toLowerCase();
+      for (const [k, v] of Object.entries(obj)) {
+        if (k.toLowerCase() === `${modePrefix}${lowerClean}`) {
+          if (v !== undefined && v !== null && v !== '') return v;
+        }
+      }
+      // 2. Try clean/unprefixed match (e.g. "screens")
+      for (const [k, v] of Object.entries(obj)) {
+        if (k.toLowerCase() === lowerClean) {
+          if (v !== undefined && v !== null && v !== '') return v;
+        }
+      }
+      // 3. Try alternative role prefix (e.g. "internal:screens")
+      const otherPrefix = `${mode === 'client' ? 'internal' : 'client'}:`.toLowerCase();
+      for (const [k, v] of Object.entries(obj)) {
+        if (k.toLowerCase() === `${otherPrefix}${lowerClean}`) {
+          if (v !== undefined && v !== null && v !== '') return v;
+        }
+      }
+      return undefined;
+    };
+
+    const phVal = searchInObj(phMeta);
+    if (phVal !== undefined) return phVal;
+
+    const modVal = searchInObj(modMeta);
+    if (modVal !== undefined) return modVal;
+
+    return undefined;
+  }, [mode]);
+
   // Scan all unique custom metadata keys from modules and phases based on active mode
   const customMetadataKeys = useMemo(() => {
-    const keys = new Set<string>();
+    const keysMap = new Map<string, string>(); // lowercase cleanKey -> canonical cleanKey
     
     const addKeyIfAllowed = (metaObj: any, sourceRole: 'client' | 'internal') => {
       if (!metaObj) return;
       Object.keys(metaObj).forEach(k => {
-        if (k.startsWith('client:')) {
-          if (mode === 'client') keys.add(k);
-        } else if (k.startsWith('internal:')) {
-          if (mode === 'internal') keys.add(k);
+        let isRelevant = false;
+        if (k.toLowerCase().startsWith('client:')) {
+          if (mode === 'client') isRelevant = true;
+        } else if (k.toLowerCase().startsWith('internal:')) {
+          if (mode === 'internal') isRelevant = true;
         } else {
           // Fallback for un-prefixed keys
           if (sourceRole === mode) {
-            keys.add(k);
+            isRelevant = true;
+          }
+        }
+
+        if (isRelevant) {
+          const cleanKey = k.replace(/^(client|internal):/i, '').trim();
+          if (cleanKey) {
+            const lower = cleanKey.toLowerCase();
+            if (!keysMap.has(lower)) {
+              keysMap.set(lower, cleanKey);
+            }
           }
         }
       });
@@ -416,7 +466,11 @@ export default function ConsolidatedView({
       }
     });
 
-    return Array.from(keys);
+    return Array.from(keysMap.values()).sort((a, b) => {
+      if (a.toUpperCase() === 'SCREENS') return -1;
+      if (b.toUpperCase() === 'SCREENS') return 1;
+      return a.localeCompare(b);
+    });
   }, [data.modules, data.phases, mode]);
 
   // Reset pagination on filter adjustments
@@ -556,8 +610,8 @@ export default function ConsolidatedView({
         courseModules.forEach(mod => {
           const mPhases = data.phases.filter(p => p.moduleId === mod.id && (
             mode === 'client'
-              ? (p.sourceFile === 'Client' || !p.sourceFile)
-              : (p.sourceFile === 'Internal' || !p.sourceFile)
+              ? (p.sourceFile === 'Client' || p.sourceFile === 'Both' || (!p.sourceFile && !!p.clientDate))
+              : (p.sourceFile === 'Internal' || p.sourceFile === 'Both' || (!p.sourceFile && (!!p.internalStartDate || !!p.internalEndDate)))
           ));
           
           list.push({
@@ -670,8 +724,8 @@ export default function ConsolidatedView({
 
     const relevantPhases = data.phases.filter(p => (
       mode === 'client'
-        ? (p.sourceFile === 'Client' || !p.sourceFile)
-        : (p.sourceFile === 'Internal' || !p.sourceFile)
+        ? (p.sourceFile === 'Client' || p.sourceFile === 'Both' || (!p.sourceFile && !!p.clientDate))
+        : (p.sourceFile === 'Internal' || p.sourceFile === 'Both' || (!p.sourceFile && (!!p.internalStartDate || !!p.internalEndDate)))
     ));
 
     relevantPhases.forEach(ph => {
@@ -752,8 +806,8 @@ export default function ConsolidatedView({
   const relevantPhases = useMemo(() => {
     return data.phases.filter(p => (
       mode === 'client'
-        ? (p.sourceFile === 'Client' || !p.sourceFile)
-        : (p.sourceFile === 'Internal' || !p.sourceFile)
+        ? (p.sourceFile === 'Client' || p.sourceFile === 'Both' || (!p.sourceFile && !!p.clientDate))
+        : (p.sourceFile === 'Internal' || p.sourceFile === 'Both' || (!p.sourceFile && (!!p.internalStartDate || !!p.internalEndDate)))
     ));
   }, [data.phases, mode]);
 
@@ -769,7 +823,7 @@ export default function ConsolidatedView({
   const phaseCategoryCounts = useMemo(() => {
     const counts = { Pending: 0, Completed: 0 };
     filteredRelevantPhases.forEach(ph => {
-      const status = normalizePhaseStatus(ph.status);
+      const status = normalizePhaseStatus(mode === 'client' ? (ph.clientStatus || ph.status) : (ph.internalStatus || ph.status));
       const category = status === 'Completed' ? 'Completed' : 'Pending';
       counts[category]++;
     });
@@ -815,7 +869,7 @@ export default function ConsolidatedView({
   const statusCounts = useMemo(() => {
     const counts = { Pending: 0, Overdue: 0, InReview: 0, Completed: 0, InProgress: 0 };
     filteredRelevantPhases.forEach(ph => {
-      const status = normalizePhaseStatus(ph.status);
+      const status = normalizePhaseStatus(mode === 'client' ? (ph.clientStatus || ph.status) : (ph.internalStatus || ph.status));
       if (status === 'Pending') counts.Pending++;
       else if (status === 'Overdue') counts.Overdue++;
       else if (status === 'In Review') counts.InReview++;
@@ -871,8 +925,8 @@ export default function ConsolidatedView({
 
       if (sortField.startsWith('meta_')) {
         const metaKey = sortField.replace('meta_', '');
-        const valA_raw = a.phase.metadata?.[metaKey] ?? a.module.metadata?.[metaKey] ?? '';
-        const valB_raw = b.phase.metadata?.[metaKey] ?? b.module.metadata?.[metaKey] ?? '';
+        const valA_raw = getCustomMetadataValue(metaKey, a.phase.metadata, a.module.metadata) ?? '';
+        const valB_raw = getCustomMetadataValue(metaKey, b.phase.metadata, b.module.metadata) ?? '';
         const numA = Number(valA_raw);
         const numB = Number(valB_raw);
         if (!isNaN(numA) && !isNaN(numB) && valA_raw !== '' && valB_raw !== '') {
@@ -1074,7 +1128,10 @@ export default function ConsolidatedView({
                 const projCourseIds = projCourses.map(c => c.id);
                 const projModules = data.modules.filter(m => projCourseIds.includes(m.courseId));
                 const projModIds = projModules.map(m => m.id);
-                const projPhases = filteredRelevantPhases.filter(ph => projModIds.includes(ph.moduleId));
+                const projPhases = filteredRelevantPhases.filter(ph => 
+                  (ph.moduleId && projModIds.includes(ph.moduleId)) || 
+                  (ph.courseId && projCourseIds.includes(ph.courseId))
+                );
                 const totalPh = projPhases.length;
                 const completedPh = projPhases.filter(p => p.status === 'Completed' || p.status === 'Approved' || p.status === 'Done').length;
                 const pct = totalPh > 0 ? Math.round((completedPh / totalPh) * 100) : 100;
@@ -1112,7 +1169,10 @@ export default function ConsolidatedView({
               {data.projects.length > 0 ? `${Math.round(data.projects.reduce((acc, p) => {
                 const pCourses = data.courses.filter(c => c.projectId === p.id).map(c => c.id);
                 const pMods = data.modules.filter(m => pCourses.includes(m.courseId)).map(m => m.id);
-                const pPh = filteredRelevantPhases.filter(ph => pMods.includes(ph.moduleId));
+                const pPh = filteredRelevantPhases.filter(ph => 
+                  (ph.moduleId && pMods.includes(ph.moduleId)) || 
+                  (ph.courseId && pCourses.includes(ph.courseId))
+                );
                 const c = pPh.filter(x => x.status === 'Completed' || x.status === 'Approved' || x.status === 'Done').length;
                 return acc + (pPh.length > 0 ? (c / pPh.length) * 100 : 100);
               }, 0) / data.projects.length)}%` : '100%'}
@@ -1211,10 +1271,15 @@ export default function ConsolidatedView({
       </div>
 
       {/* 3. CONSOLIDATED FILTER PANEL */}
-      {isFilterModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:px-6">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsFilterModalOpen(false)} />
-          <div className={`relative w-full max-w-2xl rounded-3xl border p-6 shadow-2xl ${theme === 'dark' ? 'bg-[#101214] border-[#3A3F4A]' : 'bg-white border-neutral-200'}`}>
+      {isFilterModalOpen && createPortal(
+        <div 
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto"
+          onClick={() => setIsFilterModalOpen(false)}
+        >
+          <div 
+            className={`relative w-full max-w-2xl max-h-[90vh] my-auto rounded-3xl border p-6 shadow-2xl overflow-y-auto ${theme === 'dark' ? 'bg-[#101214] border-[#3A3F4A]' : 'bg-white border-neutral-200'}`}
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between gap-3 mb-5">
               <div>
                 <h2 className="text-lg font-bold tracking-tight text-[var(--text-main)]">Filters</h2>
@@ -1223,7 +1288,7 @@ export default function ConsolidatedView({
               <button
                 type="button"
                 onClick={() => setIsFilterModalOpen(false)}
-                className="rounded-full p-2 text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-card-hover)] transition-all"
+                className="rounded-full p-2 text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-card-hover)] transition-all cursor-pointer"
               >
                 ✕
               </button>
@@ -1328,14 +1393,15 @@ export default function ConsolidatedView({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 4. TABLE VIEW FOR BOTH PM AND SHARED TRACKER (READ-ONLY) */}
       {sortedTableRows.length > 0 ? (
         <div className="space-y-6 mt-6">
-          <div className="overflow-x-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-lg transition-colors">
-            <table className="w-full text-left border-collapse text-xs">
+          <div className="overflow-x-auto overscroll-x-contain touch-pan-x rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-lg transition-colors">
+            <table className="w-full text-left border-collapse text-xs min-w-[960px]">
               <thead>
                 <tr className="bg-[var(--input-bg)] border-b border-[var(--border-subtle)] text-[var(--text-muted)]">
                   {/* Header Columns */}
@@ -1359,9 +1425,8 @@ export default function ConsolidatedView({
                       { key: 'type', label: 'Type', align: 'text-center' },
                       { key: 'typePhase', label: 'Type Phase', align: 'text-center' }
                     ];
-                    customMetadataKeys.forEach(k => {
-                      const displayLabel = k.replace(/^(client|internal):/, '');
-                      columns.push({ key: `meta_${k}`, label: displayLabel, align: 'text-center' });
+                    customMetadataKeys.forEach(cleanKey => {
+                      columns.push({ key: `meta_${cleanKey}`, label: cleanKey, align: 'text-center' });
                     });
                     columns.push({ key: 'status', label: 'Status', align: 'text-center' });
 
@@ -1398,7 +1463,7 @@ export default function ConsolidatedView({
               </thead>
               <tbody className="divide-y divide-[var(--border-subtle)]">
                 {paginatedTableRows.map(({ project, course, module: mod, phase: ph, date, urgency, uniqueKey }) => {
-                  const status = normalizePhaseStatus(ph.status);
+                  const status = normalizePhaseStatus(mode === 'client' ? (ph.clientStatus || ph.status) : (ph.internalStatus || ph.status));
                   const isRejected = status === 'Rejected';
                   const isInReview = status === 'In Review';
                   const isCompleted = status === 'Completed';
@@ -1487,11 +1552,14 @@ export default function ConsolidatedView({
                         </td>
 
                         {/* Custom columns metadata */}
-                        {customMetadataKeys.map(key => {
-                          const val = ph.metadata?.[key] ?? mod.metadata?.[key] ?? '-';
+                        {customMetadataKeys.map(cleanKey => {
+                          const rawVal = getCustomMetadataValue(cleanKey, ph.metadata, mod.metadata);
+                          const displayVal = (rawVal === undefined || rawVal === null || rawVal === '')
+                            ? '-'
+                            : (typeof rawVal === 'object' ? JSON.stringify(rawVal) : String(rawVal));
                           return (
-                            <td key={key} className={`p-2.5 font-semibold font-mono text-center ${theme === 'dark' ? 'text-neutral-350' : 'text-slate-700'}`}>
-                              {val}
+                            <td key={cleanKey} className={`p-2.5 font-semibold font-mono text-center ${theme === 'dark' ? 'text-neutral-350' : 'text-slate-700'}`}>
+                              {displayVal}
                             </td>
                           );
                         })}
@@ -1523,30 +1591,45 @@ export default function ConsolidatedView({
                               value={status === 'Completed' ? 'Completed' : 'Pending'}
                               options={mode === 'client' ? ['Pending', 'Completed'] : undefined}
                               onChange={async (val) => {
-                                const previousStatus = ph.status;
+                                const currentStatus = mode === 'client' ? (ph.clientStatus || ph.status) : (ph.internalStatus || ph.status);
+                                const previousStatus = currentStatus;
                                 const newStatus = val as Phase['status'];
                                 // 0ms Optimistic UI update
                                 setData(prev => ({
                                   ...prev,
-                                  phases: prev.phases.map(item => item.id === ph.id ? { ...item, status: newStatus } : item)
+                                  phases: prev.phases.map(item => item.id === ph.id ? {
+                                    ...item,
+                                    status: newStatus,
+                                    ...(mode === 'client' ? { clientStatus: newStatus } : { internalStatus: newStatus })
+                                  } : item)
                                 }));
-                                updatePhaseInCache(ph.id, { status: newStatus });
+                                updatePhaseInCache(ph.id, {
+                                  status: newStatus,
+                                  ...(mode === 'client' ? { clientStatus: newStatus } : { internalStatus: newStatus })
+                                });
 
                                 try {
                                   setAssignError(null);
                                   if (mode === 'client') {
-                                    await updateClientPhaseStatus(ph.id, val);
+                                    await updateClientPhaseStatus(ph.clientPhaseId || ph.id, val);
                                   } else {
-                                    await updatePhaseStatus(ph.id, val);
+                                    await updatePhaseStatus(ph.internalPhaseId || ph.id, val);
                                   }
                                 } catch (err: any) {
                                   console.error(err);
                                   // Revert on failure
                                   setData(prev => ({
                                     ...prev,
-                                    phases: prev.phases.map(item => item.id === ph.id ? { ...item, status: previousStatus } : item)
+                                    phases: prev.phases.map(item => item.id === ph.id ? {
+                                      ...item,
+                                      status: previousStatus,
+                                      ...(mode === 'client' ? { clientStatus: previousStatus } : { internalStatus: previousStatus })
+                                    } : item)
                                   }));
-                                  updatePhaseInCache(ph.id, { status: previousStatus });
+                                  updatePhaseInCache(ph.id, {
+                                    status: previousStatus,
+                                    ...(mode === 'client' ? { clientStatus: previousStatus } : { internalStatus: previousStatus })
+                                  });
                                   setAssignError(err.message || "Failed to update status.");
                                 }
                                 await loadData(true);

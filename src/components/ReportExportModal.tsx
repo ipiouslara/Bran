@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FileSpreadsheet,
   Calendar,
@@ -145,10 +146,11 @@ export default function ReportExportModal({
       });
 
       filteredPhases.forEach(phase => {
-        if (!modulePhaseMap.has(phase.moduleId)) {
-          modulePhaseMap.set(phase.moduleId, new Map());
+        const mKey = phase.moduleId || phase.courseId || 'unknown';
+        if (!modulePhaseMap.has(mKey)) {
+          modulePhaseMap.set(mKey, new Map());
         }
-        modulePhaseMap.get(phase.moduleId)!.set(phase.phaseName, phase);
+        modulePhaseMap.get(mKey)!.set(phase.phaseName, phase);
       });
 
       const uniquePhaseNames = Array.from(allPhaseNamesSet);
@@ -156,7 +158,7 @@ export default function ReportExportModal({
       // 2. Identify target modules
       const targetModules = modules.length > 0
         ? modules
-        : Array.from(new Set(phases.map(p => p.moduleId)))
+        : Array.from(new Set(phases.map(p => p.moduleId).filter((id): id is string => !!id)))
             .map(id => moduleMap.get(id))
             .filter((m): m is Module => m !== undefined);
 
@@ -321,12 +323,18 @@ export default function ReportExportModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
-      <div className={`w-full max-w-lg rounded-xl border ${cardBg} shadow-2xl overflow-hidden flex flex-col`}>
+  return createPortal(
+    <div 
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto"
+      onClick={onClose}
+    >
+      <div 
+        className={`w-full max-w-lg max-h-[90vh] my-auto rounded-2xl border ${cardBg} shadow-2xl overflow-hidden flex flex-col`}
+        onClick={e => e.stopPropagation()}
+      >
         
         {/* Modal Header */}
-        <div className="p-5 border-b border-[#B1B7C3]/20 flex items-center justify-between bg-gradient-to-r from-[#193661] to-[#00669B] text-white">
+        <div className="p-5 border-b border-[#B1B7C3]/20 flex items-center justify-between bg-gradient-to-r from-[#193661] to-[#00669B] text-white shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-lg bg-[#2484C6]/20 text-[#2484C6]">
               <FileSpreadsheet className="w-5 h-5" />
@@ -342,7 +350,7 @@ export default function ReportExportModal({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors"
+            className="p-1 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -428,11 +436,11 @@ export default function ReportExportModal({
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 border-t border-neutral-500/10 bg-neutral-900/60 flex items-center justify-end gap-3">
+        <div className="p-4 border-t border-neutral-500/10 bg-neutral-900/60 flex items-center justify-end gap-3 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="px-4 py-2 text-xs font-semibold rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
           >
             Cancel
           </button>
@@ -449,6 +457,7 @@ export default function ReportExportModal({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

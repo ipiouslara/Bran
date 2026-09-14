@@ -31,7 +31,8 @@ import {
   Table,
   UploadCloud,
   ShieldCheck,
-  Clock
+  Clock,
+  X
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -74,6 +75,8 @@ interface SidebarProps {
   notifications?: Notification[];
   onMarkAllNotificationsRead?: () => void;
   onNotificationClick?: (n: Notification) => void;
+  mobileDrawerOpen?: boolean;
+  onCloseMobileDrawer?: () => void;
 }
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
@@ -91,6 +94,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   notifications = [],
   onMarkAllNotificationsRead,
   onNotificationClick,
+  mobileDrawerOpen = false,
+  onCloseMobileDrawer,
 }) => {
   const [isNotifOpen,        setIsNotifOpen]        = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -136,6 +141,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // ── Nav item renderer ──────────────────────────────────────────────────────
 
+  const isMobileOrExpanded = expanded || mobileDrawerOpen;
+
   const renderNavItem = (
     id: string,
     pageKey: string,
@@ -149,9 +156,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <button
         key={id}
         id={id}
-        onClick={() => onNavigate(pageKey)}
-        title={!expanded ? label : ''}
-        className={`w-full py-2.5 ${!expanded ? 'px-0 justify-center' : 'px-3 justify-between'} rounded-lg flex items-center text-xs transition-colors relative cursor-pointer ${
+        onClick={() => {
+          onNavigate(pageKey);
+          if (onCloseMobileDrawer) onCloseMobileDrawer();
+        }}
+        title={!isMobileOrExpanded ? label : ''}
+        className={`w-full py-2.5 ${!isMobileOrExpanded ? 'px-0 justify-center' : 'px-3 justify-between'} rounded-lg flex items-center text-xs transition-colors relative cursor-pointer ${
           isActive ? 'text-[var(--text-main)] font-bold shadow-xs' : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-card-hover)] font-medium'
         }`}
       >
@@ -166,17 +176,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
           />
         )}
-        <div className={`flex items-center gap-3 min-w-0 relative z-10 ${!expanded ? 'justify-center w-full' : ''}`}>
+        <div className={`flex items-center gap-3 min-w-0 relative z-10 ${!isMobileOrExpanded ? 'justify-center w-full' : ''}`}>
           <span
             className="w-4 h-4 shrink-0 flex items-center justify-center text-[var(--text-muted)] group-hover:text-[var(--text-main)]"
             style={isActive ? { color: BRAND.green } : {}}
           >
             {icon}
           </span>
-          {expanded && <span className="truncate">{label}</span>}
+          {isMobileOrExpanded && <span className="truncate">{label}</span>}
         </div>
 
-        {expanded && badgeCount !== undefined && badgeCount > 0 && (
+        {isMobileOrExpanded && badgeCount !== undefined && badgeCount > 0 && (
           <span className="relative z-10 text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-[var(--bg-card-hover)] text-[var(--text-main)] border border-[var(--border-subtle)]">
             {badgeCount}
           </span>
@@ -200,54 +210,78 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // ──────────────────────────────────────────────────────────────────────────
 
   return (
-    <aside
-      className={`shrink-0 h-screen sticky top-0 bg-[var(--sidebar-bg)] border-r border-[var(--border-subtle)] flex flex-col justify-between transition-all duration-300 z-30 ${
-        expanded ? 'w-64' : 'w-14'
-      }`}
-    >
-      {/* ── 1. Brand Header — locked to h-[52px] to align with dashboard overview header ── */}
-      <div className="h-[52px] px-2 border-b border-[var(--border-subtle)] flex items-center justify-between shrink-0">
-        {expanded ? (
-          <>
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              {/* Mediant Labs logo */}
-              <div className="w-8 h-8 flex items-center justify-center shrink-0">
-                <img src="/logo.png" alt="Mediant Labs" className="w-7 h-7 object-contain" />
-              </div>
-              <div className="leading-tight min-w-0">
-                <span className="text-xs font-extrabold tracking-tight block truncate text-[var(--text-main)]">MEDIANT LABS</span>
-                <span className="text-[9px] text-[var(--text-muted)] font-semibold uppercase tracking-wider block">BRAN v2.0</span>
-              </div>
-            </div>
+    <>
+      {/* ── Mobile Backdrop Overlay ── */}
+      {mobileDrawerOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 md:hidden transition-opacity"
+          onClick={onCloseMobileDrawer}
+          aria-hidden="true"
+        />
+      )}
 
+      <aside
+        className={`fixed md:sticky top-0 left-0 h-screen bg-[var(--sidebar-bg)] border-r border-[var(--border-subtle)] flex flex-col justify-between transition-all duration-300 z-50 md:z-30 shrink-0 ${
+          mobileDrawerOpen
+            ? 'translate-x-0 w-64 shadow-2xl'
+            : '-translate-x-full md:translate-x-0'
+        } ${expanded ? 'md:w-64' : 'md:w-14'}`}
+      >
+        {/* ── 1. Brand Header — locked to h-[52px] to align with dashboard overview header ── */}
+        <div className="h-[52px] px-2 border-b border-[var(--border-subtle)] flex items-center justify-between shrink-0">
+          {isMobileOrExpanded ? (
+            <>
+              <div className="flex items-center gap-2.5 overflow-hidden">
+                {/* Mediant Labs logo */}
+                <div className="w-8 h-8 flex items-center justify-center shrink-0">
+                  <img src="/logo.png" alt="Mediant Labs" className="w-7 h-7 object-contain" />
+                </div>
+                <div className="leading-tight min-w-0">
+                  <span className="text-xs font-extrabold tracking-tight block truncate text-[var(--text-main)]">MEDIANT LABS</span>
+                  <span className="text-[9px] text-[var(--text-muted)] font-semibold uppercase tracking-wider block">BRAN v2.0</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                {/* Mobile Drawer Close Button */}
+                <button
+                  onClick={onCloseMobileDrawer}
+                  className="md:hidden p-1.5 rounded-md border border-[var(--border-subtle)] hover:bg-[var(--bg-card-hover)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all cursor-pointer"
+                  title="Close Navigation"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
+                {/* Desktop Collapse Button */}
+                <button
+                  onClick={onToggleExpand}
+                  className="hidden md:block p-1 rounded-md border border-[var(--border-subtle)] hover:bg-[var(--bg-card-hover)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all cursor-pointer"
+                  title="Collapse Sidebar"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </>
+          ) : (
             <button
               onClick={onToggleExpand}
-              className="p-1 rounded-md border border-[var(--border-subtle)] hover:bg-[var(--bg-card-hover)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all cursor-pointer shrink-0"
-              title="Collapse Sidebar"
+              className="w-full flex items-center justify-center rounded-lg hover:bg-[var(--bg-card-hover)] transition-all cursor-pointer group"
+              title="Expand Sidebar"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
+              <div className="w-7 h-7 flex items-center justify-center relative">
+                <img src="/logo.png" alt="Mediant Labs" className="w-6 h-6 object-contain" />
+                <ChevronRight className="w-3 h-3 text-[var(--text-muted)] absolute -right-2 bg-[var(--sidebar-bg)] rounded-full border border-[var(--border-subtle)] transition-all group-hover:text-[var(--text-main)]" />
+              </div>
             </button>
-          </>
-        ) : (
-          <button
-            onClick={onToggleExpand}
-            className="w-full flex items-center justify-center rounded-lg hover:bg-[var(--bg-card-hover)] transition-all cursor-pointer group"
-            title="Expand Sidebar"
-          >
-            <div className="w-7 h-7 flex items-center justify-center relative">
-              <img src="/logo.png" alt="Mediant Labs" className="w-6 h-6 object-contain" />
-              <ChevronRight className="w-3 h-3 text-[var(--text-muted)] absolute -right-2 bg-[var(--sidebar-bg)] rounded-full border border-[var(--border-subtle)] transition-all group-hover:text-[var(--text-main)]" />
-            </div>
-          </button>
-        )}
-      </div>
+          )}
+        </div>
 
       {/* ── 2. Scrollable Navigation ─────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-1.5 py-3 space-y-4">
 
         {/* Analytics & Progress */}
         <div className="space-y-1">
-          {expanded && (
+          {isMobileOrExpanded && (
             <span className="text-[9px] uppercase font-bold tracking-widest text-neutral-500 px-3 block mb-1">
               Analytics &amp; Progress
             </span>
@@ -261,7 +295,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Operations */}
         <div className="space-y-1">
-          {expanded && (
+          {isMobileOrExpanded && (
             <button
               onClick={() => setOpsCollapsed(!opsCollapsed)}
               className="w-full flex items-center justify-between text-[9px] uppercase font-bold tracking-widest text-neutral-500 px-3 py-1 hover:text-neutral-300 cursor-pointer"
@@ -281,7 +315,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Governance */}
         <div className="space-y-1">
-          {expanded && (
+          {isMobileOrExpanded && (
             <button
               onClick={() => setCalCollapsed(!calCollapsed)}
               className="w-full flex items-center justify-between text-[9px] uppercase font-bold tracking-widest text-neutral-500 px-3 py-1 hover:text-neutral-300 cursor-pointer"
@@ -308,40 +342,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             ref={bellRef}
             onClick={handleBellClick}
-            title={!expanded ? 'Notifications' : ''}
-            className={`w-full py-2.5 ${!expanded ? 'px-0 justify-center' : 'px-3 justify-between'} rounded-lg flex items-center text-xs text-neutral-400 hover:text-white hover:bg-neutral-900/60 transition-all cursor-pointer font-medium`}
+            title={!isMobileOrExpanded ? 'Notifications' : ''}
+            className={`w-full py-2.5 ${!isMobileOrExpanded ? 'px-0 justify-center' : 'px-3 justify-between'} rounded-lg flex items-center text-xs text-neutral-400 hover:text-white hover:bg-neutral-900/60 transition-all cursor-pointer font-medium`}
           >
-            <div className={`flex items-center gap-3 min-w-0 ${!expanded ? 'justify-center w-full' : ''}`}>
+            <div className={`flex items-center gap-3 min-w-0 ${!isMobileOrExpanded ? 'justify-center w-full' : ''}`}>
               <div className="relative w-4 h-4 shrink-0 flex items-center justify-center">
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500" />
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 )}
               </div>
-              {expanded && <span>Notifications</span>}
+              {isMobileOrExpanded && <span>Notifications</span>}
             </div>
-            {expanded && unreadCount > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                {unreadCount > 9 ? '9+' : unreadCount}
+            {isMobileOrExpanded && unreadCount > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                {unreadCount}
               </span>
             )}
           </button>
 
-          {/* Notification Panel — Portal renders into document.body, escaping sidebar clipping */}
+          {/* Notifications Dropdown Panel */}
           {createPortal(
             <AnimatePresence>
               {isNotifOpen && (
                 <motion.div
                   ref={panelRef}
-                  initial={{ opacity: 0, scale: 0.9, x: -12, y: 12 }}
-                  animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, x: -12, y: 12 }}
-                  transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                  style={{ position: 'fixed', bottom: notifPos.bottom, left: notifPos.left, zIndex: 9999 }}
-                  className="w-80 rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl text-xs py-1 flex flex-col justify-end max-h-96 divide-y divide-neutral-900"
+                  initial={{ opacity: 0, scale: 0.95, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 8 }}
+                  transition={{ duration: 0.15 }}
+                  className="fixed z-50 w-72 rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl overflow-hidden text-xs"
+                  style={{ bottom: notifPos.bottom, left: notifPos.left }}
                 >
-                  <div className="px-3 py-2 flex items-center justify-between font-semibold">
-                    <span className="text-white font-bold">Notifications</span>
+                  <div className="px-3.5 py-2.5 border-b border-neutral-900 flex items-center justify-between">
+                    <span className="font-bold text-white text-xs">Alerts</span>
                     {unreadCount > 0 && onMarkAllNotificationsRead && (
                       <button
                         onClick={onMarkAllNotificationsRead}
@@ -361,6 +395,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onClick={() => {
                             if (onNotificationClick) onNotificationClick(n);
                             setIsNotifOpen(false);
+                            if (onCloseMobileDrawer) onCloseMobileDrawer();
                           }}
                           className={`p-2.5 hover:bg-neutral-900 transition-colors flex flex-col gap-0.5 cursor-pointer ${
                             !n.isRead ? 'bg-neutral-900/60' : ''
@@ -382,20 +417,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Theme Toggle */}
         <button
           onClick={onToggleTheme}
-          title={!expanded ? (theme === 'dark' ? 'Light Theme' : 'Dark Theme') : ''}
-          className={`w-full py-2.5 ${!expanded ? 'px-0 justify-center' : 'px-3 gap-3'} rounded-lg flex items-center text-xs text-neutral-400 hover:text-white hover:bg-neutral-900/60 transition-all cursor-pointer font-medium`}
+          title={!isMobileOrExpanded ? (theme === 'dark' ? 'Light Theme' : 'Dark Theme') : ''}
+          className={`w-full py-2.5 ${!isMobileOrExpanded ? 'px-0 justify-center' : 'px-3 gap-3'} rounded-lg flex items-center text-xs text-neutral-400 hover:text-white hover:bg-neutral-900/60 transition-all cursor-pointer font-medium`}
         >
-          <span className={`w-4 h-4 shrink-0 flex items-center justify-center ${!expanded ? 'mx-auto' : ''}`}>
+          <span className={`w-4 h-4 shrink-0 flex items-center justify-center ${!isMobileOrExpanded ? 'mx-auto' : ''}`}>
             {theme === 'dark'
               ? <Sun className="w-4 h-4 text-amber-400" />
               : <Moon className="w-4 h-4 text-neutral-400" />}
           </span>
-          {expanded && <span>{theme === 'dark' ? 'Dark Theme' : 'Light Theme'}</span>}
+          {isMobileOrExpanded && <span>{theme === 'dark' ? 'Dark Theme' : 'Light Theme'}</span>}
         </button>
 
         {/* Account card — click to open settings modal (no border-t separator above) */}
         <div>
-          {expanded ? (
+          {isMobileOrExpanded ? (
             <button
               onClick={() => setIsAccountModalOpen(true)}
               className="w-full p-2.5 rounded-xl bg-[var(--input-bg)] border border-[var(--border-subtle)] flex items-center gap-3 hover:bg-[var(--bg-card-hover)] transition-all cursor-pointer group"
@@ -435,9 +470,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Sign Out */}
-        {expanded ? (
+        {isMobileOrExpanded ? (
           <button
-            onClick={onLogout}
+            onClick={() => {
+              onLogout();
+              if (onCloseMobileDrawer) onCloseMobileDrawer();
+            }}
             className="w-full py-2 px-3 rounded-lg flex items-center gap-3 text-xs font-medium transition-all cursor-pointer text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10"
           >
             <LogOut className="w-4 h-4 shrink-0 text-rose-500/60" />
@@ -457,13 +495,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* ── Account Settings Modal ───────────────────────────────────────── */}
-      {isAccountModalOpen && (
+      {isAccountModalOpen && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md overflow-y-auto"
           onClick={() => setIsAccountModalOpen(false)}
         >
           <div
-            className="w-full max-w-sm p-5 rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl space-y-4 text-xs"
+            className="relative w-full max-w-sm max-h-[90vh] my-auto p-5 rounded-2xl border border-neutral-800 bg-neutral-950 shadow-2xl space-y-4 text-xs overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -491,7 +529,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 {initials}
               </div>
-              <div className="leading-tight min-w-0">
+              <div className="leading-tight min-w-0 flex-1 text-left">
                 <p className="font-bold text-white text-sm truncate">{currentUser?.name || 'User Profile'}</p>
                 <p className="text-neutral-400 text-xs truncate">{currentUser?.email || 'No email attached'}</p>
               </div>
@@ -526,9 +564,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </aside>
+    </>
   );
 };
 

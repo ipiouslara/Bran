@@ -204,13 +204,13 @@ function ProjectHolidayModalComponent({ theme, project, currentUser, onClose }: 
 
   const modalJSX = (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-xs overflow-y-auto"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div 
-        className={`relative w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 rounded-2xl border shadow-2xl ${
+        className={`relative w-full max-w-4xl max-h-[90vh] my-auto overflow-y-auto p-6 rounded-2xl border shadow-2xl ${
           isDark ? 'bg-[#1B1D21] border-[#B1B7C3]/20 text-white' : 'bg-white border-slate-200 text-slate-900'
         }`}
         onClick={(e) => e.stopPropagation()}
@@ -557,11 +557,11 @@ function ProjectHolidayModalComponent({ theme, project, currentUser, onClose }: 
         {/* Action Prompt Modal */}
         {selectedIsoDate && (
           <div 
-            className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
+            className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/50 backdrop-blur-xs overflow-y-auto"
             onClick={(e) => { if (e.target === e.currentTarget) setSelectedIsoDate(null); }}
           >
             <div 
-              className={`relative z-10 w-full max-w-sm p-5 rounded-xl border shadow-2xl ${
+              className={`relative z-10 w-full max-w-sm max-h-[90vh] my-auto p-5 rounded-2xl border shadow-2xl overflow-y-auto ${
                 isDark ? 'bg-[#1B1D21] border-neutral-700 text-white' : 'bg-white border-slate-200 text-slate-900'
               }`}
               onClick={(e) => e.stopPropagation()}

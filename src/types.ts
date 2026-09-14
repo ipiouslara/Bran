@@ -8,6 +8,8 @@ export interface Project {
   name: string;
   createdAt: string;
   ownerId?: string;
+  has_lms_track?: boolean;
+  column_order?: string[] | { internal?: string[]; client?: string[] } | null;
 }
 
 export interface RawUpload {
@@ -23,6 +25,7 @@ export interface Course {
   projectId: string;
   name: string;
   code: string;
+  metadata?: Record<string, any> | null;
 }
 
 export interface Module {
@@ -49,7 +52,9 @@ export interface Employee {
 
 export interface ClientPhase {
   id: string;
-  moduleId: string;
+  moduleId?: string | null;
+  courseId?: string | null;
+  entityLevel?: 'module' | 'course';
   phaseName: string;
   phaseType?: string | null;
   phaseTypePhase?: string | null;
@@ -61,7 +66,9 @@ export interface ClientPhase {
 
 export interface InternalPhase {
   id: string;
-  moduleId: string;
+  moduleId?: string | null;
+  courseId?: string | null;
+  entityLevel?: 'module' | 'course';
   phaseName: string;
   phaseType?: string | null;
   phaseTypePhase?: string | null;
@@ -77,7 +84,9 @@ export interface InternalPhase {
 
 export interface Phase {
   id: string;
-  moduleId: string;
+  moduleId?: string | null;
+  courseId?: string | null;
+  entityLevel?: 'module' | 'course';
   phaseName: string;
   phaseType?: string | null;    // e.g. 'Alpha', 'Beta', 'LMS', 'QA'
   phaseTypePhase?: string | null; // e.g. 'Phase 1', 'Phase 2'
@@ -86,9 +95,11 @@ export interface Phase {
   internalStartDate?: string | null;
   internalEndDate?: string | null;
   sourceFileRef: string;
-  sourceFile?: 'Client' | 'Internal' | null;
+  sourceFile?: 'Client' | 'Internal' | 'Both' | null;
   assignedTo?: string | null; // Employee UUID (or id)
   status?: 'Pending' | 'Completed' | 'Overdue' | 'Rejected' | 'In Review' | 'Done' | 'Approved' | 'In Progress';
+  clientStatus?: 'Pending' | 'Completed' | 'Overdue' | 'Rejected' | 'In Review' | 'Done' | 'Approved' | 'In Progress' | null;
+  internalStatus?: 'Pending' | 'Completed' | 'Overdue' | 'Rejected' | 'In Review' | 'Done' | 'Approved' | 'In Progress' | null;
   rejectionNote?: string | null;
   clientPhaseId?: string | null;
   internalPhaseId?: string | null;
