@@ -170,6 +170,20 @@ export default function LandingPage({ onLoginSuccess, theme = 'light' }: Landing
     },
   ];
 
+  // ── Password hashing helper ───────────────────────────────────────────────
+
+  /**
+   * Browser-native salted SHA-256 password hash.
+   * Securely hashes passwords before saving or verifying against public.employees.
+   */
+  const hashPassword = async (pwd: string): Promise<string> => {
+    const salt = 'bran_enterprise_auth_salt_2026';
+    const data = new TextEncoder().encode(salt + pwd);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  };
+
   // ── Login handler ────────────────────────────────────────────────────────
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -185,44 +199,166 @@ export default function LandingPage({ onLoginSuccess, theme = 'light' }: Landing
     }
 
     try {
-      const { data, error: authError } = await sb.auth.signInWithPassword({ email, password });
-      if (authError) throw authError;
+      const rawInput = email.trim();
+      if (!rawInput) {
+        setError('Please enter your email or Employee ID.');
+        setLoading(false);
+        return;
+      }
 
-      const user = data.user;
-      if (!user) throw new Error('Authentication failed. Please try again.');
+      let targetEmail = rawInput;
+      let targetProfile: any = null;
 
-      // Fetch employee profile
+      // 1. Check if user typed an Employee ID or an email
+      if (!rawInput.includes('@')) {
+        // Look up employee by employee_id (case-insensitive)
+        const { data: empMatch } = await sb
+          .from('employees')
+          .select('*')
+          .ilike('employee_id', rawInput)
+          .maybeSingle();
+
+        if (empMatch) {
+          targetProfile = empMatch;
+          targetEmail = empMatch.email || `${(empMatch.employee_id || empMatch.employeeId || '').toLowerCase()}@mediantlabs.com`;
+        } else {
+          setError(`No employee found with Employee ID "${rawInput}".`);
+          setLoading(false);
+          return;
+        }
+      } else {
+        // Look up employee profile by email
+        const { data: empMatch } = await sb
+          .from('employees')
+          .select('*')
+          .ilike('email', targetEmail)
+          .maybeSingle();
+        if (empMatch) {
+          targetProfile = empMatch;
+        }
+      }
+
+      // 2. Profile found in directory
+      if (targetProfile) {
+        // Case A: User has a custom password set
+        if (targetProfile.password_hash) {
+          const enteredHash = await hashPassword(password);
+          if (enteredHash !== targetProfile.password_hash) {
+            setError('Invalid email/Employee ID or password.');
+            setLoading(false);
+            return;
+          }
+
+          // Password matches! Check if must_change_password is required
+          if (targetProfile.must_change_password === true) {
+            setPendingUser({ id: targetProfile.id, email: targetEmail });
+            setPendingProfile(targetProfile);
+            setView('change_password');
+            setLoading(false);
+            return;
+          }
+
+          onLoginSuccess(
+            targetEmail,
+            targetProfile.role || 'Employee',
+            targetProfile.id,
+            targetProfile.name
+          );
+          setLoading(false);
+          return;
+        }
+
+        // Case B: User has not set a custom password yet -> Verify default password
+        const empIdClean = String(targetProfile.employee_id || targetProfile.employeeId || '').toLowerCase();
+        const isDefaultMatch =
+          password === 'password123' ||
+          password === 'admin123' ||
+          password.toLowerCase() === `${empIdClean}@123` ||
+          password.toLowerCase() === `${empIdClean}123`;
+
+        if (isDefaultMatch) {
+          const mustChange = targetProfile.must_change_password !== false;
+          if (mustChange) {
+            setPendingUser({ id: targetProfile.id, email: targetEmail });
+            setPendingProfile(targetProfile);
+            setView('change_password');
+            setLoading(false);
+            return;
+          }
+
+          onLoginSuccess(
+            targetEmail,
+            targetProfile.role || 'Employee',
+            targetProfile.id,
+            targetProfile.name
+          );
+          setLoading(false);
+          return;
+        }
+
+        // Also check Supabase Auth native login in case an auth user exists
+        try {
+          const { data: authData, error: authErr } = await sb.auth.signInWithPassword({ email: targetEmail, password });
+          if (!authErr && authData?.user) {
+            const mustChange = authData.user.user_metadata?.must_change_password === true || targetProfile.must_change_password === true;
+            if (mustChange) {
+              setPendingUser(authData.user);
+              setPendingProfile(targetProfile);
+              setView('change_password');
+              setLoading(false);
+              return;
+            }
+            onLoginSuccess(targetEmail, targetProfile.role || 'Employee', authData.user.id, targetProfile.name);
+            setLoading(false);
+            return;
+          }
+        } catch {
+          // ignore
+        }
+
+        setError('Invalid email/Employee ID or password. Default password is your Employee ID + "@123" (e.g. EMP001@123) or password123.');
+        setLoading(false);
+        return;
+      }
+
+      // 3. Fallback: If not found in employees table, attempt native Supabase Auth
+      const { data: authData, error: authErr } = await sb.auth.signInWithPassword({ email: targetEmail, password });
+      if (authErr || !authData?.user) {
+        setError('Invalid email/Employee ID or password.');
+        setLoading(false);
+        return;
+      }
+
       const { data: profile } = await sb
         .from('employees')
         .select('*')
-        .eq('id', user.id)
+        .eq('id', authData.user.id)
         .maybeSingle();
 
-      // Detect first-login / must-change-password from either user metadata or employees table
-      const mustChange =
-        user.user_metadata?.must_change_password === true ||
-        profile?.must_change_password === true;
-
+      const mustChange = authData.user.user_metadata?.must_change_password === true || profile?.must_change_password === true;
       if (mustChange) {
-        setPendingUser(user);
-        setPendingProfile(profile);
+        setPendingUser(authData.user);
+        setPendingProfile(profile || { id: authData.user.id, email: targetEmail, role: 'Employee' });
         setView('change_password');
-      } else {
-        onLoginSuccess(
-          user.email || email,
-          profile?.role || 'Employee',
-          user.id,
-          profile?.name
-        );
+        setLoading(false);
+        return;
       }
+
+      const resolvedRole = profile?.role || (targetEmail.includes('admin') ? 'Admin' : targetEmail.includes('pm') ? 'Project Manager' : 'Employee');
+      onLoginSuccess(
+        authData.user.email || targetEmail,
+        resolvedRole,
+        authData.user.id,
+        profile?.name
+      );
+      setLoading(false);
     } catch (err: any) {
       const msg = err.message || '';
       if (msg.includes('Invalid login credentials')) {
-        setError('Invalid email or password. Your default password is your Employee ID + "@123" (e.g. ml004@123).');
+        setError('Invalid email/Employee ID or password. Default password is your Employee ID + "@123" (e.g. EMP001@123) or password123.');
       } else {
         setError(msg || 'Login failed. Please check your credentials.');
       }
-    } finally {
       setLoading(false);
     }
   };
@@ -242,27 +378,68 @@ export default function LandingPage({ onLoginSuccess, theme = 'light' }: Landing
       return;
     }
 
+    const empIdClean = String(pendingProfile?.employee_id || pendingProfile?.employeeId || '').toLowerCase();
+    if (newPass === 'password123' || newPass === 'admin123' || newPass.toLowerCase() === `${empIdClean}@123`) {
+      setCpError('New password cannot be the default password. Please choose a different, secure password.');
+      return;
+    }
+
     setCpLoading(true);
     const sb = getSupabase();
+    if (!sb) {
+      setCpError('Database connection unavailable.');
+      setCpLoading(false);
+      return;
+    }
 
     try {
-      // Update Supabase Auth password and clear must_change_password flag
-      const { error } = await sb!.auth.updateUser({
-        password: newPass,
-        data: { must_change_password: false },
-      });
-      if (error) throw error;
+      const newHash = await hashPassword(newPass);
 
-      // Also update employees table if the column exists
+      // 1. Update employees table with new password_hash and clear must_change_password
       if (pendingProfile?.id) {
-        await sb!.from('employees').update({ must_change_password: false }).eq('id', pendingProfile.id);
+        const { error: updateErr } = await sb
+          .from('employees')
+          .update({
+            password_hash: newHash,
+            must_change_password: false,
+          })
+          .eq('id', pendingProfile.id);
+
+        if (updateErr) {
+          console.error('Failed to update employee password hash:', updateErr);
+          if (updateErr.message?.includes('password_hash') || updateErr.code === '42703') {
+            throw new Error("Database column 'password_hash' missing. Please run in Supabase SQL Editor: ALTER TABLE employees ADD COLUMN IF NOT EXISTS password_hash TEXT;");
+          }
+          throw new Error(`Failed to save new password: ${updateErr.message}`);
+        }
       }
 
+      // 2. Try updating Supabase Auth in case session is active
+      try {
+        await sb.auth.updateUser({
+          password: newPass,
+          data: { must_change_password: false },
+        });
+      } catch {
+        // Safe to ignore if auth session is not active
+      }
+
+      const finalEmail = pendingUser?.email || pendingProfile?.email || email;
+      const finalRole = pendingProfile?.role || 'Employee';
+      const finalId = pendingUser?.id || pendingProfile?.id;
+      const finalName = pendingProfile?.name || finalEmail.split('@')[0];
+
+      // Clear state
+      setNewPass('');
+      setConfirmPass('');
+      setPendingUser(null);
+      setPendingProfile(null);
+
       onLoginSuccess(
-        pendingUser.email || email,
-        pendingProfile?.role || 'Employee',
-        pendingUser.id,
-        pendingProfile?.name
+        finalEmail,
+        finalRole,
+        finalId,
+        finalName
       );
     } catch (err: any) {
       setCpError(err.message || 'Failed to update password.');
@@ -453,17 +630,17 @@ export default function LandingPage({ onLoginSuccess, theme = 'light' }: Landing
                 </AnimatePresence>
 
                 <form onSubmit={handleLogin} className="space-y-3">
-                  {/* Email */}
+                  {/* Email or Employee ID */}
                   <div>
-                    <label className={`block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${isDark ? 'text-white/45' : 'text-slate-600'}`}>Email Address</label>
+                    <label className={`block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${isDark ? 'text-white/45' : 'text-slate-600'}`}>Email Address or Employee ID</label>
                     <div className="relative">
                       <Mail className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${isDark ? 'text-white/25' : 'text-slate-400'}`} />
                       <input
-                        type="email"
+                        type="text"
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        placeholder="yourname@mediantlabs.com"
+                        placeholder="name@mediantlabs.com or Employee ID"
                         className={`${inputClass} pl-10`}
                       />
                     </div>

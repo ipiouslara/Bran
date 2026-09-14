@@ -48,6 +48,8 @@ export interface Employee {
   designation: string;
   email?: string;
   role?: UserRole;
+  must_change_password?: boolean;
+  password_hash?: string | null;
 }
 
 export interface ClientPhase {

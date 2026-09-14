@@ -579,7 +579,9 @@ export async function getEmployees(): Promise<Employee[]> {
     name: e.name,
     designation: e.designation,
     email: e.email,
-    role: e.role
+    role: e.role,
+    must_change_password: e.must_change_password,
+    password_hash: e.password_hash,
   }));
 }
 
@@ -691,7 +693,8 @@ export async function saveEmployee(
     name: employee.name.trim(),
     designation: employee.designation,
     email: email,
-    role: role
+    role: role,
+    must_change_password: true
   });
 
   if (dbError) {

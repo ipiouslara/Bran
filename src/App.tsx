@@ -103,7 +103,14 @@ export default function App() {
     }
   }, [theme]);
 
-  const [currentUser, setCurrentUser] = useState<{ email: string; role: string; id?: string; employeeId?: string; name?: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ email: string; role: string; id?: string; employeeId?: string; name?: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem('bran_current_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [activePage, setActivePage] = useState<'dashboard' | 'client' | 'internal' | 'ingestion' | 'directory' | 'employee-directory' | 'capacity-allocation' | 'audit-log' | 'employee_dashboard' | 'tracker' | 'calendar' | 'projects' | 'project_editor' | 'activity_log' | 'uploads_log' | 'employees' | 'allocations' | 'my_dashboard'>('dashboard');
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -118,7 +125,14 @@ export default function App() {
   };
 
   // 3-screen flow: landing → auth → app
-  const [appView, setAppView] = useState<'landing' | 'auth' | 'app'>('landing');
+  const [appView, setAppView] = useState<'landing' | 'auth' | 'app'>(() => {
+    try {
+      const saved = localStorage.getItem('bran_current_user');
+      return saved ? 'app' : 'landing';
+    } catch {
+      return 'landing';
+    }
+  });
   
   const [sidebarExpanded, setSidebarExpanded] = useState<boolean>(() => {
     const saved = localStorage.getItem('sidebar_expanded');
@@ -225,8 +239,17 @@ export default function App() {
   const [joinResults, setJoinResults] = useState<JoinResultRow[]>([]);
   const [dbCommitCounter, setDbCommitCounter] = useState(0);
 
-  // Sync React currentUser state with global DB session helper
+  // Sync React currentUser state with global DB session helper and localStorage
   useEffect(() => {
+    if (currentUser) {
+      try {
+        localStorage.setItem('bran_current_user', JSON.stringify(currentUser));
+      } catch (e) {}
+    } else {
+      try {
+        localStorage.removeItem('bran_current_user');
+      } catch (e) {}
+    }
     setGlobalCurrentUser(currentUser);
   }, [currentUser]);
 
@@ -234,9 +257,32 @@ export default function App() {
   useEffect(() => {
     const sb = getSupabase();
     if (sb) {
-      sb.auth.getSession().then(({ data, error }) => {
-        if (!error && data?.session) {
+      sb.auth.getSession().then(async ({ data, error }) => {
+        if (!error && data?.session?.user) {
           setGlobalSession(data.session);
+          const user = data.session.user;
+          try {
+            const { data: profile } = await sb
+              .from('employees')
+              .select('*')
+              .eq('id', user.id)
+              .maybeSingle();
+
+            const role = profile?.role || (user.email === 'admin@mediantlabs.com' ? 'Admin' : user.email === 'pm@mediantlabs.com' ? 'Project Manager' : 'Employee');
+            const name = profile?.name || user.email?.split('@')[0];
+            const employeeId = profile?.employee_id;
+
+            setCurrentUser({
+              email: user.email || '',
+              role,
+              id: user.id,
+              employeeId,
+              name
+            });
+            setAppView('app');
+          } catch (profileErr) {
+            console.warn("Could not fetch user profile:", profileErr);
+          }
         } else {
           setGlobalSession(null);
         }
@@ -244,8 +290,16 @@ export default function App() {
         console.warn("Auth getSession error:", err);
         setGlobalSession(null);
       });
-      const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
+
+      const { data: { subscription } } = sb.auth.onAuthStateChange((event, session) => {
         setGlobalSession(session);
+        if (event === 'SIGNED_OUT') {
+          setCurrentUser(null);
+          setAppView('landing');
+          try {
+            localStorage.removeItem('bran_current_user');
+          } catch (e) {}
+        }
       });
       return () => {
         subscription?.unsubscribe();
@@ -422,6 +476,9 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     setAppView('landing');
+    try {
+      localStorage.removeItem('bran_current_user');
+    } catch (e) {}
     const sb = getSupabase();
     if (sb) {
       sb.auth.signOut();
