@@ -206,10 +206,69 @@ export default function LandingPage({ onLoginSuccess, theme = 'light' }: Landing
         return;
       }
 
+      const enteredHash = await hashPassword(password);
+
+      // 1. Try Server-Side RPC Verification (Prevents sending password_hash to the frontend)
+      try {
+        const { data: rpcRes, error: rpcErr } = await sb.rpc('verify_employee_login', {
+          p_identifier: rawInput,
+          p_password_hash: enteredHash,
+        });
+
+        if (!rpcErr && rpcRes) {
+          if (rpcRes.success) {
+            const profile = rpcRes.profile;
+            if (rpcRes.is_default_pending) {
+              const empIdClean = String(profile?.employeeId || profile?.employee_id || '').toLowerCase();
+              const isDefaultMatch =
+                password === 'password123' ||
+                password === 'admin123' ||
+                password.toLowerCase() === `${empIdClean}@123` ||
+                password.toLowerCase() === `${empIdClean}123`;
+
+              if (isDefaultMatch) {
+                setPendingUser({ id: profile.id, email: profile.email });
+                setPendingProfile(profile);
+                setView('change_password');
+                setLoading(false);
+                return;
+              } else {
+                setError('Invalid email/Employee ID or password. Default password is your Employee ID + "@123" (e.g. EMP001@123) or password123.');
+                setLoading(false);
+                return;
+              }
+            }
+
+            if (rpcRes.must_change_password) {
+              setPendingUser({ id: profile.id, email: profile.email });
+              setPendingProfile(profile);
+              setView('change_password');
+              setLoading(false);
+              return;
+            }
+
+            onLoginSuccess(
+              profile.email,
+              profile.role || 'Employee',
+              profile.id,
+              profile.name
+            );
+            setLoading(false);
+            return;
+          } else if (rpcRes.error) {
+            setError(rpcRes.error);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (rpcCatch) {
+        console.warn('verify_employee_login RPC fallback:', rpcCatch);
+      }
+
       let targetEmail = rawInput;
       let targetProfile: any = null;
 
-      // 1. Check if user typed an Employee ID or an email
+      // 2. Check if user typed an Employee ID or an email
       if (!rawInput.includes('@')) {
         // Look up employee by employee_id (case-insensitive)
         const { data: empMatch } = await sb
@@ -238,11 +297,10 @@ export default function LandingPage({ onLoginSuccess, theme = 'light' }: Landing
         }
       }
 
-      // 2. Profile found in directory
+      // 3. Profile found in directory (Fallback if RPC not installed)
       if (targetProfile) {
         // Case A: User has a custom password set
         if (targetProfile.password_hash) {
-          const enteredHash = await hashPassword(password);
           if (enteredHash !== targetProfile.password_hash) {
             setError('Invalid email/Employee ID or password.');
             setLoading(false);
@@ -395,8 +453,22 @@ export default function LandingPage({ onLoginSuccess, theme = 'light' }: Landing
     try {
       const newHash = await hashPassword(newPass);
 
-      // 1. Update employees table with new password_hash and clear must_change_password
-      if (pendingProfile?.id) {
+      // 1. Try server-side RPC to update password securely
+      let rpcUpdated = false;
+      try {
+        const { data: rpcRes, error: rpcErr } = await sb.rpc('set_employee_password', {
+          p_id: pendingProfile.id,
+          p_new_hash: newHash,
+        });
+        if (!rpcErr && rpcRes?.success) {
+          rpcUpdated = true;
+        }
+      } catch {
+        rpcUpdated = false;
+      }
+
+      // Fallback: Direct table update if RPC is not yet installed in database
+      if (!rpcUpdated && pendingProfile?.id) {
         const { error: updateErr } = await sb
           .from('employees')
           .update({

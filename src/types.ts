@@ -49,7 +49,6 @@ export interface Employee {
   email?: string;
   role?: UserRole;
   must_change_password?: boolean;
-  password_hash?: string | null;
 }
 
 export interface ClientPhase {

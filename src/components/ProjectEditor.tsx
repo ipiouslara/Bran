@@ -1102,7 +1102,8 @@ export default function ProjectEditor({
       if (!projectCourseIds.includes(courseId)) {
         projectCourseIds.push(courseId);
       }
-      const projectPhases = phases.filter(p => p.moduleId && projectCourseIds.includes(p.moduleId));
+      const projectModuleIds = modules.filter(m => projectCourseIds.includes(m.courseId)).map(m => m.id);
+      const projectPhases = phases.filter(p => p.moduleId && projectModuleIds.includes(p.moduleId));
 
       let internalNames = Array.from(new Set(
         projectPhases
@@ -1116,10 +1117,10 @@ export default function ProjectEditor({
           .map(p => p.phaseName)
       )) as string[];
 
-      if (internalNames.length === 0 && internalPhaseNames && internalPhaseNames.length > 0) {
+      if (internalNames.length === 0 && targetProjectIdForRow === selectedProjectId && internalPhaseNames && internalPhaseNames.length > 0) {
         internalNames = internalPhaseNames;
       }
-      if (clientNames.length === 0 && clientPhaseNames && clientPhaseNames.length > 0) {
+      if (clientNames.length === 0 && targetProjectIdForRow === selectedProjectId && clientPhaseNames && clientPhaseNames.length > 0) {
         clientNames = clientPhaseNames;
       }
 

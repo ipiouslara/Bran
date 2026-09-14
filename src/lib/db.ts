@@ -570,7 +570,11 @@ export async function getEmployees(): Promise<Employee[]> {
   const sb = getSupabase();
   if (!sb) throw new Error("Supabase client is not initialized.");
   
-  const { data, error } = await sb.from('employees').select('*').order('created_at', { ascending: false });
+  const { data, error } = await sb
+    .from('employees')
+    .select('id, employee_id, name, designation, email, role, must_change_password')
+    .order('created_at', { ascending: false });
+    
   if (error) throw error;
   
   return (data || []).map(e => ({
@@ -581,7 +585,6 @@ export async function getEmployees(): Promise<Employee[]> {
     email: e.email,
     role: e.role,
     must_change_password: e.must_change_password,
-    password_hash: e.password_hash,
   }));
 }
 
