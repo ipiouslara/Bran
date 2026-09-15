@@ -8,6 +8,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, Mail, Lock, Eye, EyeOff, AlertCircle, ChevronLeft, KeyRound, CheckCircle2, ChevronDown } from 'lucide-react';
 import { getSupabase, getEmployees } from '../lib/db';
 import { Employee } from '../types';
+import ForcePasswordReset from './ForcePasswordReset';
+import { hashPassword } from '../utils/passwordValidator';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,12 +109,7 @@ export default function LandingPage({ onLoginSuccess, theme = 'light' }: Landing
   const [pendingUser,    setPendingUser]    = useState<any>(null);
   const [pendingProfile, setPendingProfile] = useState<any>(null);
 
-  // Change password form
-  const [newPass,     setNewPass]     = useState('');
-  const [confirmPass, setConfirmPass] = useState('');
-  const [showNewPass, setShowNewPass] = useState(false);
-  const [cpLoading,   setCpLoading]   = useState(false);
-  const [cpError,     setCpError]     = useState<string | null>(null);
+
 
   // ── Demo quick-login ─────────────────────────────────────────────────────
 
@@ -170,19 +167,7 @@ export default function LandingPage({ onLoginSuccess, theme = 'light' }: Landing
     },
   ];
 
-  // ── Password hashing helper ───────────────────────────────────────────────
 
-  /**
-   * Browser-native salted SHA-256 password hash.
-   * Securely hashes passwords before saving or verifying against public.employees.
-   */
-  const hashPassword = async (pwd: string): Promise<string> => {
-    const salt = 'bran_enterprise_auth_salt_2026';
-    const data = new TextEncoder().encode(salt + pwd);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  };
 
   // ── Login handler ────────────────────────────────────────────────────────
 
@@ -421,104 +406,7 @@ export default function LandingPage({ onLoginSuccess, theme = 'light' }: Landing
     }
   };
 
-  // ── Change password handler ───────────────────────────────────────────────
 
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCpError(null);
-
-    if (newPass !== confirmPass) {
-      setCpError('Passwords do not match.');
-      return;
-    }
-    if (newPass.length < 8) {
-      setCpError('Password must be at least 8 characters.');
-      return;
-    }
-
-    const empIdClean = String(pendingProfile?.employee_id || pendingProfile?.employeeId || '').toLowerCase();
-    if (newPass === 'password123' || newPass === 'admin123' || newPass.toLowerCase() === `${empIdClean}@123`) {
-      setCpError('New password cannot be the default password. Please choose a different, secure password.');
-      return;
-    }
-
-    setCpLoading(true);
-    const sb = getSupabase();
-    if (!sb) {
-      setCpError('Database connection unavailable.');
-      setCpLoading(false);
-      return;
-    }
-
-    try {
-      const newHash = await hashPassword(newPass);
-
-      // 1. Try server-side RPC to update password securely
-      let rpcUpdated = false;
-      try {
-        const { data: rpcRes, error: rpcErr } = await sb.rpc('set_employee_password', {
-          p_id: pendingProfile.id,
-          p_new_hash: newHash,
-        });
-        if (!rpcErr && rpcRes?.success) {
-          rpcUpdated = true;
-        }
-      } catch {
-        rpcUpdated = false;
-      }
-
-      // Fallback: Direct table update if RPC is not yet installed in database
-      if (!rpcUpdated && pendingProfile?.id) {
-        const { error: updateErr } = await sb
-          .from('employees')
-          .update({
-            password_hash: newHash,
-            must_change_password: false,
-          })
-          .eq('id', pendingProfile.id);
-
-        if (updateErr) {
-          console.error('Failed to update employee password hash:', updateErr);
-          if (updateErr.message?.includes('password_hash') || updateErr.code === '42703') {
-            throw new Error("Database column 'password_hash' missing. Please run in Supabase SQL Editor: ALTER TABLE employees ADD COLUMN IF NOT EXISTS password_hash TEXT;");
-          }
-          throw new Error(`Failed to save new password: ${updateErr.message}`);
-        }
-      }
-
-      // 2. Try updating Supabase Auth in case session is active
-      try {
-        await sb.auth.updateUser({
-          password: newPass,
-          data: { must_change_password: false },
-        });
-      } catch {
-        // Safe to ignore if auth session is not active
-      }
-
-      const finalEmail = pendingUser?.email || pendingProfile?.email || email;
-      const finalRole = pendingProfile?.role || 'Employee';
-      const finalId = pendingUser?.id || pendingProfile?.id;
-      const finalName = pendingProfile?.name || finalEmail.split('@')[0];
-
-      // Clear state
-      setNewPass('');
-      setConfirmPass('');
-      setPendingUser(null);
-      setPendingProfile(null);
-
-      onLoginSuccess(
-        finalEmail,
-        finalRole,
-        finalId,
-        finalName
-      );
-    } catch (err: any) {
-      setCpError(err.message || 'Failed to update password.');
-    } finally {
-      setCpLoading(false);
-    }
-  };
 
   // ── Input styles ──────────────────────────────────────────────────────────
 
@@ -819,137 +707,22 @@ export default function LandingPage({ onLoginSuccess, theme = 'light' }: Landing
 
           {/* ══════════════════════════ CHANGE PASSWORD VIEW ══════════════════════════ */}
           {view === 'change_password' && (
-            <motion.div
-              key="change_password"
-              initial={{ opacity: 0, y: 80 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -80 }}
-              transition={{ duration: 0.55, ease: [0.25, 0.4, 0.25, 1] }}
-              className="max-w-md mx-auto space-y-5"
-            >
-              <div className="flex flex-col items-center gap-1.5 mb-2">
-                <div
-                  className="w-12 h-12 rounded-full flex items-center justify-center"
-                  style={{
-                    background: isDark ? 'rgba(29,170,88,0.12)' : 'rgba(29,170,88,0.10)',
-                    border: isDark ? '1px solid rgba(29,170,88,0.25)' : '1px solid rgba(29,170,88,0.30)',
-                  }}
-                >
-                  <KeyRound className="w-5 h-5" style={{ color: '#1DAA58' }} />
-                </div>
-                <p className={`font-bold text-sm ${isDark ? 'text-white' : 'text-slate-900'}`}>Set your new password</p>
-                <p className={`text-[11px] text-center leading-relaxed px-4 ${isDark ? 'text-white/35' : 'text-slate-500'}`}>
-                  This is your first login. Please set a personal password to continue.
-                </p>
-              </div>
-
-              <div
-                className="rounded-2xl p-6 space-y-4"
-                style={{
-                  background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.92)',
-                  backdropFilter: 'blur(16px)',
-                  border: isDark ? '1px solid rgba(255,255,255,0.09)' : '1px solid rgba(226,232,240,0.85)',
-                  boxShadow: isDark
-                    ? '0 20px 60px rgba(0,0,0,0.6)'
-                    : '0 20px 50px -10px rgba(15,23,42,0.10), 0 1px 3px rgba(15,23,42,0.05)',
-                }}
-              >
-                {/* Error */}
-                <AnimatePresence>
-                  {cpError && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 flex items-start gap-2 overflow-hidden"
-                    >
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <span className="leading-snug">{cpError}</span>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <form onSubmit={handleChangePassword} className="space-y-3">
-                  {/* New Password */}
-                  <div>
-                    <label className={`block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${isDark ? 'text-white/45' : 'text-slate-600'}`}>New Password</label>
-                    <div className="relative">
-                      <Lock className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${isDark ? 'text-white/25' : 'text-slate-400'}`} />
-                      <input
-                        type={showNewPass ? 'text' : 'password'}
-                        required
-                        minLength={8}
-                        value={newPass}
-                        onChange={(e) => setNewPass(e.target.value)}
-                        placeholder="Min. 8 characters"
-                        className={`${inputClass} pl-10 pr-10`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPass(!showNewPass)}
-                        className={`absolute right-3.5 top-1/2 -translate-y-1/2 transition-colors cursor-pointer ${isDark ? 'text-white/25 hover:text-white/60' : 'text-slate-400 hover:text-slate-600'}`}
-                      >
-                        {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Confirm Password */}
-                  <div>
-                    <label className={`block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${isDark ? 'text-white/45' : 'text-slate-600'}`}>Confirm Password</label>
-                    <div className="relative">
-                      <Lock className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${isDark ? 'text-white/25' : 'text-slate-400'}`} />
-                      <input
-                        type={showNewPass ? 'text' : 'password'}
-                        required
-                        minLength={8}
-                        value={confirmPass}
-                        onChange={(e) => setConfirmPass(e.target.value)}
-                        placeholder="Repeat your new password"
-                        className={`${inputClass} pl-10`}
-                      />
-                    </div>
-
-                    {/* Password match indicator */}
-                    {confirmPass.length > 0 && (
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        {newPass === confirmPass ? (
-                          <>
-                            <CheckCircle2 className="w-3.5 h-3.5 text-[#1DAA58]" />
-                            <span className="text-[10px] text-[#1DAA58]">Passwords match</span>
-                          </>
-                        ) : (
-                          <>
-                            <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
-                            <span className="text-[10px] text-rose-400">Passwords do not match</span>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Submit */}
-                  <button
-                    type="submit"
-                    disabled={cpLoading || newPass !== confirmPass || newPass.length < 8}
-                    className="w-full py-3 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all duration-200 hover:brightness-110 active:scale-[0.98] disabled:opacity-40 cursor-pointer mt-1"
-                    style={{
-                      background: 'linear-gradient(135deg, #1DAA58 0%, #2484C6 100%)',
-                      boxShadow: '0 4px 20px rgba(29,170,88,0.22)',
-                    }}
-                  >
-                    {cpLoading ? (
-                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        <span>Set Password & Enter BRAN</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                </form>
-              </div>
-            </motion.div>
+            <ForcePasswordReset
+              isDark={isDark}
+              pendingUser={pendingUser}
+              pendingProfile={pendingProfile}
+              onSuccess={(finalEmail, finalRole, finalId, finalName) => {
+                setPendingUser(null);
+                setPendingProfile(null);
+                onLoginSuccess(finalEmail, finalRole, finalId, finalName);
+              }}
+              onBackToLogin={() => {
+                setPendingUser(null);
+                setPendingProfile(null);
+                setView('login');
+                setError(null);
+              }}
+            />
           )}
 
         </AnimatePresence>
